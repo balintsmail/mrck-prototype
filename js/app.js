@@ -439,6 +439,47 @@
   };
   $('logClear').onclick = () => { state.showLog = false; state.logName = null; sync(); };
 
+  // --- Export MRCK: the traction-control maps and settings edited here are written into the base calibration
+  // base/DatasetSTK_EBOL_10to15.bmwrc25 (valid CRCs, see bmwrc25.js) and the result is downloaded.
+  const EXPORT_BASE = 'base/DatasetSTK_EBOL_10to15.bmwrc25';
+  const ECU_POINTS = 10;                    // every slip target map in the ECU has 10 lean points
+  // A map as the ECU stores it: ascending lean axis with exactly 10 points. Missing points are added above the
+  // highest lean angle shown here (70°), every 5°, repeating the values of that highest point.
+  function ecuTarget(t) {
+    if (t.lean.length > ECU_POINTS) throw new Error(`Map ${t.id} has ${t.lean.length} target points; the ECU holds ${ECU_POINTS}. Delete ${t.lean.length - ECU_POINTS} point(s) first.`);
+    const extra = ECU_POINTS - t.lean.length, top = t.lean[0];      // lean is descending (70 -> 0)
+    const lean = [...Array.from({ length: extra }, (_, k) => top + 5 * (extra - k)), ...t.lean];
+    const rows = t.rows.map(row => [...new Array(extra).fill(row[0]), ...row]);
+    return { id: t.id, lean: lean.reverse(), rows: rows.map(r => r.reverse()) };
+  }
+  const pad2 = n => String(n).padStart(2, '0');
+  function exportFile(base, baseName) {
+    const now = new Date();
+    const desc = baseName.replace(/\.bmwrc25$/i, '') + '_MRCK';
+    const xml = Bmwrc25.exportBmwrc25(base, {
+      targets: D.targets.map(ecuTarget),
+      allocation: D.allocation,
+      userShift: US,
+      reduction: D.settings.reduction === 'cut' ? 1 : 0,
+      dtcMode: D.settings.dtcMode,
+      desc, date: `${pad2(now.getMonth() + 1)}/${pad2(now.getDate())}/${now.getFullYear()}`,
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([xml], { type: 'application/xml' }));
+    a.download = desc + '.bmwrc25';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    return xml;
+  }
+  $('exportMrck').onclick = async () => {
+    try {
+      const res = await fetch(EXPORT_BASE, { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`base calibration not found (${EXPORT_BASE})`);
+      exportFile(await res.text(), EXPORT_BASE.split('/').pop());
+    } catch (err) { alert(`Export MRCK: ${err.message}`); }
+  };
+  window.MRCK_EXPORT = { exportFile, ecuTarget };   // for testing from the console
+
   function doUndo(from, to) {
     const item = from.pop(); if (!item) return;
     // the opposite stack gets the current state, keeping the entry's label and time
@@ -861,7 +902,7 @@
     $('shiftMap').value = self.id;
     [...$('shiftMap').options].forEach(o => { const u = usageTxt(+o.value); o.textContent = `Map ${o.value}` + (u ? ` ${u}` : ''); });
     $('shiftPanel').hidden = tab !== 'user';
-    $('viewActions').hidden = tab === 'settings';
+    $('log').hidden = tab === 'settings';           // Export MRCK stays on every tab
     // The map's data table is always shown below the graph (Modes, Gears, All slip target maps).
     const tableOn = modes || gears || tab === 'maps';
     $('chart').hidden = tab === 'settings';
@@ -879,7 +920,7 @@
     $('log').setAttribute('aria-pressed', state.showLog);
     $('logName').textContent = state.showLog && state.logName ? state.logName : 'Import logged data';
     $('log').title = state.showLog ? 'Import another log file' : '';
-    $('logClear').hidden = !state.showLog;
+    $('logClear').hidden = !state.showLog || tab === 'settings';
 
     syncHistory();
     syncMuPanel();

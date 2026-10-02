@@ -504,3 +504,4 @@ body.no-scroll { overflow: hidden; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .chart-legend svg { height: 14px; width: auto; color: var(--lc, #3f8ce8); fill: none; }
 .chart-legend svg circle { fill: #fff; }
+#log[hidden], #exportMrck[hidden] { display: none; }

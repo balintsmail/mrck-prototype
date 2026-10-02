@@ -1,2 +1,3 @@
 # local backups of earlier dataset versions
 data-backups/
+*.local.bmwrc25
