@@ -477,10 +477,12 @@ html { scrollbar-gutter: stable; }   /* same width whether or not the page scrol
 .editor-box { width: min(1400px, 100%); height: calc(100vh - 48px); background: var(--bg); border: 1px solid var(--grid); border-radius: 6px; box-shadow: 0 20px 60px rgba(0, 0, 0, .6); display: flex; flex-direction: column; overflow: hidden; }
 .editor-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid var(--grid); }
 .editor-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
-.editor-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 24px; padding: 16px 20px; overflow: auto; }
+.editor-body { flex: 1; min-height: 0; padding: 16px 20px; overflow-y: auto; }   /* one column; scrolls to the rest of the table */
+.editor-side { display: none; }
 .editor-side .mu-panel { margin: 0; padding: 0; border: 0; }
-.editor-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.editor-main .chart { flex: 1 1 0; height: auto; min-height: 280px; max-height: none; aspect-ratio: auto; }
+.editor-main { display: flex; flex-direction: column; min-width: 0; }
+.editor-main .chart { flex: none; height: var(--editor-chart-h, 420px); min-height: 0; max-height: none; aspect-ratio: auto; }
+.editor-main .mu-panel { margin: 14px 0 0; padding: 0; border: 0; max-width: 560px; }
 .editor-main .table-view { margin-top: 14px; }
 body.no-scroll { overflow: hidden; }
 @media (max-width: 899px) { .editor { padding: 0; } .editor-box { height: 100vh; border-radius: 0; } .editor-body { grid-template-columns: 1fr; } .editor-main .chart { flex: none; height: 60vw; } }

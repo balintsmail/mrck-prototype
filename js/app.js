@@ -622,7 +622,7 @@
 
   // --- Map editor overlay: the graph, data table and μ levels panel move into the overlay while it is open
   // (the "All slip target maps" editing, for one map); closing puts them back and restores the view.
-  const EDITOR_PARTS = [['chart', 'editorMain'], ['tableView', 'editorMain'], ['muPanel', 'editorSide']];
+  const EDITOR_PARTS = [['chart', 'editorMain'], ['muPanel', 'editorMain'], ['tableView', 'editorMain']];
   let editorSaved = null;
   function openEditor() {
     const id = editId();
@@ -651,6 +651,17 @@
     sync();
     window.scrollTo(0, sv.scroll);
     if (sv.focus && sv.focus.focus) sv.focus.focus();
+  }
+  // Editor overlay: the graph takes the height that leaves the μ settings and the table head + first 3 rows
+  // visible; the rest of the table is reached by scrolling the overlay body.
+  function fitEditor() {
+    const body = document.querySelector('#editor .editor-body'), ch = $('chart');
+    const rows = $('mapTbl').querySelectorAll('tbody tr'), last = rows[Math.min(2, rows.length - 1)];
+    if (!last) return;
+    const cr = ch.getBoundingClientRect(), br = body.getBoundingClientRect();
+    const reserve = last.getBoundingClientRect().bottom - cr.bottom;          // μ settings + table head + 3 rows
+    const h = br.bottom - 16 - (cr.top + body.scrollTop) - reserve;
+    document.documentElement.style.setProperty('--editor-chart-h', Math.max(260, Math.round(h)) + 'px');
   }
   $('editMapBtn').onclick = openEditor;
   $('editorClose').onclick = closeEditor;
@@ -835,7 +846,7 @@
     const root = document.documentElement.style;
     root.setProperty('--main-top', Math.round($('mainView').getBoundingClientRect().top + window.scrollY) + 'px');
     const ch = $('chart');
-    if (state.editor) return;          // the graph sits in the editor overlay
+    if (state.editor) { fitEditor(); return; }   // the graph sits in the editor overlay
     if (ch.hidden) return;
     const cr = ch.getBoundingClientRect();
     let reserve = 0;
