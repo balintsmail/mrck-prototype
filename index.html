@@ -38,9 +38,10 @@
 <div class="app">
   <div class="tabbar">
   <div class="tabs" role="tablist" aria-label="View">
-    <button role="tab" id="tabModes" data-tab="modes" aria-controls="chart">Riding modes</button>
-    <button role="tab" id="tabGears" data-tab="gears" aria-controls="chart">Gears</button>
-    <button role="tab" id="tabMaps" data-tab="maps" aria-controls="chart">All slip target maps</button>
+    <!-- riding modes / gears / maps: their navigation is the second row of tabs (#subTabs) -->
+    <button role="tab" id="tabModes" data-tab="modes" data-nav="top" aria-controls="chart">Riding modes</button>
+    <button role="tab" id="tabGears" data-tab="gears" data-nav="top" aria-controls="chart">Gears</button>
+    <button role="tab" id="tabMaps" data-tab="maps" data-nav="top" aria-controls="chart">All slip target maps</button>
     <button role="tab" id="tabSettings" data-tab="settings" aria-controls="settingsPanel">Settings</button>
     <button role="tab" id="tabUser" data-tab="user" aria-controls="shiftPanel">+- Buttons</button>
   </div>
@@ -57,6 +58,9 @@
       </div>
     </div>
   </div>
+
+  <!-- second row of tabs (B tabs): riding modes / gears / maps -->
+  <div class="subtabs" id="subTabs" role="tablist" hidden></div>
 
   <div class="layout">
   <!-- Left column: which map each vehicle mode / gear uses -->
@@ -117,8 +121,8 @@
       <button class="switch" id="muLevelsSw" role="switch" aria-checked="true" title="Show the μ levels of the selected map">
         <span class="material-icons" aria-hidden="true">toggle_on</span>Show μ levels
       </button>
-      <div class="side-sub">Maps shown</div>
-      <div class="chip-list" id="mapFilter" role="group" aria-label="Maps shown in the background"></div>
+      <div class="side-sub">Maps to show</div>
+      <div class="chip-list" id="mapFilter" role="group" aria-label="Maps to show in the background"></div>
     </div>
 
 

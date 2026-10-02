@@ -508,3 +508,19 @@ body.no-scroll { overflow: hidden; }
 .chart-legend svg circle { fill: #fff; }
 #log[hidden], #exportMrck[hidden] { display: none; }
 .slip-chart:focus, .slip-chart:focus-visible, .chart:focus { outline: none; }   /* no focus frame around the graph; target points show their own focus */
+/* ---------- B tabs: second row of tabs (riding modes / gears / maps), 2px smaller than the main tabs ---------- */
+.tab-sep { flex: none; width: 1px; height: 18px; align-self: center; background: var(--grid); }
+.subtabs { display: flex; gap: 22px; border-bottom: 1px solid var(--grid); margin: -12px 0 12px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.subtabs[hidden] { display: none; }
+.subtabs button {
+  flex: none; height: 38px; padding: 0 2px; border: 0; border-radius: 0; background: none;
+  font-size: 13px; font-weight: 700; color: var(--muted); white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .2s, border-color .2s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.subtabs button:hover { color: var(--text); border-color: transparent; }
+.subtabs button[aria-selected="true"] { color: var(--text); border-bottom-color: #3f8ce8; background: none; }
+.subtabs .sw { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.subtabs .sw { width: 2px; height: 12px; border-radius: 1px; }   /* map colour as a short vertical line */
+.subtabs .sw-all { background: #fff; }   /* All: white mark, same size as the map colours */
+#editMapBtn[hidden] { display: none; }

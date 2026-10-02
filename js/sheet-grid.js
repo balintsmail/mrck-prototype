@@ -15,6 +15,7 @@
         onMessage() {}, label: '',
       }, o);
       this.a = { r: 0, c: 0 };       // active cell (anchor)
+      this.none = !!o.startEmpty;     // startEmpty: no cell selected until the user picks one
       this.e = { r: 0, c: 0 };       // other corner of the selection
       this.editing = null;
       table.tabIndex = 0;
@@ -55,12 +56,13 @@
 
     render() {
       const s = this.rect(), o = this.o, single = s.r0 === s.r1 && s.c0 === s.c1;
+      const none = this.none;
       this.t.querySelectorAll('th[data-hr]').forEach(th => th.classList.toggle('hdr-on', !!o.headerActive('row', +th.dataset.hr)));
       this.t.querySelectorAll('th[data-hc]').forEach(th => th.classList.toggle('hdr-on', !!o.headerActive('col', +th.dataset.hc)));
       this.t.querySelectorAll('td[data-r]').forEach(td => {
         const r = +td.dataset.r, c = +td.dataset.c;
-        const active = r === this.a.r && c === this.a.c;
-        const inSel = r >= s.r0 && r <= s.r1 && c >= s.c0 && c <= s.c1;
+        const active = !none && r === this.a.r && c === this.a.c;
+        const inSel = !none && r >= s.r0 && r <= s.r1 && c >= s.c0 && c <= s.c1;
         td.querySelector('.num').textContent = o.format(o.get(r, c), r, c);
         td.className = o.cellClass(r, c) || '';
         td.setAttribute('aria-selected', inSel);
@@ -80,6 +82,7 @@
     // Move the active cell (or extend the selection).
     setActive(r, c, extend, silent) {
       ({ r, c } = this.clamp(r, c));
+      this.none = false;
       if (extend) { this.e = { r, c }; this.render(); return; }
       this.a = { r, c }; this.e = { r, c };
       this.render();

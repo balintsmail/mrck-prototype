@@ -163,7 +163,7 @@
   //         to a map shows up everywhere that map is used.
   const MODE_NAMES = { Rain: 'Rain', Int: 'Int', Dry1: 'Dry 1', Dry2: 'Dry 2' };
 
-  [$('tabModes'), $('tabGears'), $('tabMaps'), $('tabSettings'), $('tabUser')].forEach(b => {
+  document.querySelectorAll('.tabs [role="tab"]').forEach(b => {
     b.onclick = () => {
       // remember what the user picked in the left column of the tab being left
       if (state.tab === 'modes') state.memMode = state.vmode;
@@ -339,6 +339,33 @@
   });
   $('mapList').addEventListener('mouseleave', () => { if (state.tab === 'maps') chart.preview(null); });
 
+  // B tabs: the left-column navigation (riding modes / gears / maps) as a second row of tabs.
+  function syncSubTabs(on, self) {
+    const el = $('subTabs');
+    el.hidden = !on;
+    if (!on) return;
+    const items = state.tab === 'modes' ? ['Dry1', 'Dry2', 'Rain', 'Int'].map(m => ({ k: 'mode', v: D.VEHICLE_MODES.indexOf(m), label: MODE_NAMES[m], sel: m === state.vmode }))
+      : state.tab === 'gears' ? GEAR_COLORS.map((c, gi) => ({ k: 'gear', v: gi, label: '#' + (gi + 1), sel: gi === state.cell.gear }))
+      : [{ k: 'all', v: 0, label: '<i class="sw sw-all"></i>All', sel: noSel() },   // All: no map selected, every map shown
+         ...D.targets.map(t => ({ k: 'map', v: t.id, label: `<i class="sw" style="background:${mapColor(t.id)}"></i>Map ${t.id}`, sel: !noSel() && t.id === self.id }))];
+    el.setAttribute('aria-label', state.tab === 'modes' ? 'Riding modes' : state.tab === 'gears' ? 'Gears' : 'Slip target maps');
+    el.innerHTML = items.map(it => `<button role="tab" data-k="${it.k}" data-v="${it.v}" aria-selected="${it.sel}">${it.label}</button>`).join('');
+  }
+  $('subTabs').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const v = +b.dataset.v;
+    if (b.dataset.k === 'all') { state.noSel = true; sync(); return; }
+    if (b.dataset.k === 'mode') selectMode(v);
+    else if (b.dataset.k === 'gear') selectGear(v);
+    else { state.targetIndex = indexOf(v); state.noSel = false; sync(); }
+  });
+  $('subTabs').addEventListener('mouseover', e => {
+    if (state.tab !== 'maps') return;
+    const b = e.target.closest('button[data-k="map"]');
+    chart.preview(b && indexOf(+b.dataset.v) !== state.targetIndex ? 't' + b.dataset.v : null);
+  });
+  $('subTabs').addEventListener('mouseleave', () => { if (state.tab === 'maps') chart.preview(null); });
+
   // Interpolation calculation style: a setting of each map (target.smooth) — straight segments or smooth (monotone) curves.
   $('lineStyle').onclick = e => {
     const b = e.target.closest('button'), t = D.targets[state.targetIndex];
@@ -377,6 +404,24 @@
     const b = $('mapList').querySelector(`.pk[data-id="${D.targets[i].id}"]`);
     if (b) b.scrollIntoView({ block: 'nearest' });
   }
+  // B tabs: ← / → step through the second row of tabs (in its order, "All" included), with the same
+  // conditions as ↑ / ↓ below (nothing else on the page using the arrow keys).
+  document.addEventListener('keydown', e => {
+    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    const sub = $('subTabs');
+    if (sub.hidden || state.editor || state.picker || !$('pasteMenu').hidden) return;
+    const a = document.activeElement;
+    if (a && a !== document.body && !sub.contains(a) && a.closest('input, select, textarea, table, svg, [role="listbox"], [role="menu"], .mu-tables')) return;
+    const items = [...sub.querySelectorAll('button')];
+    const cur = items.findIndex(b => b.getAttribute('aria-selected') === 'true');
+    const next = items[Math.max(0, Math.min(items.length - 1, cur + (e.key === 'ArrowLeft' ? -1 : 1)))];
+    e.preventDefault();
+    if (!next || next === items[cur]) return;
+    const k = next.dataset.k, v = next.dataset.v;
+    next.click();
+    const b = sub.querySelector(`button[data-k="${k}"][data-v="${v}"]`);   // the row is rebuilt on sync
+    if (b) { b.scrollIntoView({ block: 'nearest', inline: 'nearest' }); if (sub.contains(a)) b.focus(); }
+  });
   document.addEventListener('keydown', e => {
     if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
     const gearsOn = state.tab === 'gears', modesOn = state.tab === 'modes';
@@ -406,9 +451,10 @@
   });
   function syncDisplay(self) {
     $('sideShow').hidden = state.tab !== 'maps';
+    $('muLevelsSw').hidden = noSel();               // μ levels belong to a selected map
     $('muLevelsSw').setAttribute('aria-checked', state.showMu);
     $('muLevelsSw').querySelector('.material-icons').textContent = state.showMu ? 'toggle_on' : 'toggle_off';
-    $('sideShow').querySelector('.side-sub').textContent = state.mapFilter.size ? `Maps shown · ${state.mapFilter.size} chosen` : 'Maps shown · all';
+    $('sideShow').querySelector('.side-sub').textContent = state.mapFilter.size ? `Maps to show · ${state.mapFilter.size} chosen` : 'Maps to show';
     [...$('mapFilter').children].forEach(b => {
       const id = +b.dataset.id, cur = !noSel() && id === self.id;
       b.setAttribute('aria-pressed', state.mapFilter.has(id));
@@ -563,6 +609,7 @@
   }
   const allocGrid = new SheetGrid($('allocTbl'), {
     label: 'Slip target allocation: map per vehicle mode and gear',
+    startEmpty: true,                       // no cell selected at start
     rows: MODES.map(m => MODE_NAMES[m] || m),
     cols: GEAR_COLORS.map((c, gi) => '#' + (gi + 1)),
     get: (r, c) => D.allocation[MODES[r]][c],
@@ -606,11 +653,13 @@
     closePicker();
   });
 
-  // The allocation table keeps its own selection (Dry 1 #2 at start), independent of the right side.
-  allocGrid.setActive(MODES.indexOf('Dry1'), 1, false, true);
+  // The allocation table keeps its own selection (none at start), independent of the right side.
   function syncSide() { allocGrid.render(); syncEditBtn(); }
-  const editId = () => D.allocation[MODES[allocGrid.a.r]][allocGrid.a.c];
-  function syncEditBtn() { $('editMapTxt').textContent = `Edit Map ${editId()}`; }
+  const editId = () => (allocGrid.none ? null : D.allocation[MODES[allocGrid.a.r]][allocGrid.a.c]);
+  function syncEditBtn() {                // Edit Map N: only with a cell selected
+    $('editMapBtn').hidden = editId() == null;
+    if (editId() != null) $('editMapTxt').textContent = `Edit Map ${editId()}`;
+  }
   // hovering an allocation cell thickens its map on the graph, like the selected cell
   state.hoverMap = null;
   const setHoverMap = id => { if (state.hoverMap !== id) { state.hoverMap = id; renderChart(); } };
@@ -840,7 +889,7 @@
     if (e.button !== 0 || e.target.closest(INTERACTIVE)) return;   // the chart reports its own empty clicks
     deselectMap();
   });
-  // The graph fills the viewport height, leaving room for the head and first 3 rows of the table below it
+  // The graph fills the viewport height, leaving room for the head and first row of the table below it
   // (all of the short +- Buttons table). css: --main-top (left column height), --chart-h.
   function fitMain() {
     const root = document.documentElement.style;
@@ -848,18 +897,21 @@
     const ch = $('chart');
     if (state.editor) { fitEditor(); return; }   // the graph sits in the editor overlay
     if (ch.hidden) return;
-    const cr = ch.getBoundingClientRect();
-    let reserve = 0;
-    const tv = $('tableView'), probe = tv.hidden && fitMain.tbl == null && ['modes', 'gears', 'maps'].includes(state.tab);
-    if (probe) tv.hidden = false;      // measure the table once (no paint in between), then hide it again
-    if (!tv.hidden) {
+    const left = ['modes', 'gears', 'maps'].includes(state.tab);
+    const topOf = () => ch.getBoundingClientRect().top + window.scrollY;
+    let reserve = 0, top = topOf();
+    if (left) {
+      // Every tab with a left column gets the same graph size: room for the legend and the table head + first row,
+      // also when they are hidden (no map selected).
+      const tv = $('tableView'), lg = $('chartLegend');
+      const keep = [tv.hidden, lg.hidden];
+      tv.hidden = lg.hidden = false;                // measured without painting, restored below
       const rows = $('mapTbl').querySelectorAll('tbody tr');
-      const last = rows[Math.min(2, rows.length - 1)];
-      if (last) reserve = fitMain.tbl = last.getBoundingClientRect().bottom - cr.bottom;   // remembered
-    } else if (['modes', 'gears', 'maps'].includes(state.tab)) reserve = fitMain.tbl || 96;   // same graph height with or without the table
-    else if (!$('shiftPanel').hidden) reserve = $('shiftTbl').getBoundingClientRect().bottom - cr.bottom;
-    if (probe) tv.hidden = true;
-    const h = window.innerHeight - (cr.top + window.scrollY) - reserve - 16;
+      if (rows[0]) fitMain.tbl = rows[0].getBoundingClientRect().bottom - ch.getBoundingClientRect().bottom;
+      reserve = fitMain.tbl || 96;
+      [tv.hidden, lg.hidden] = keep;
+    } else if (!$('shiftPanel').hidden) reserve = $('shiftTbl').getBoundingClientRect().bottom - ch.getBoundingClientRect().bottom;
+    const h = window.innerHeight - top - reserve - 16;
     root.setProperty('--chart-h', Math.max(300, Math.round(h)) + 'px');
   }
   window.addEventListener('resize', fitMain);
@@ -880,15 +932,17 @@
     if (MuLines.lockedRows(self).includes(state.muIndex)) state.muIndex = MuLines.anchors().base;
 
     const tab = state.tab;
-    ['Modes', 'Gears', 'Maps', 'Settings', 'User'].forEach(n => $('tab' + n).setAttribute('aria-selected', $('tab' + n).dataset.tab === tab));
-    $('sideModes').hidden = !modes;
-    $('sideGears').hidden = !gears;
+    document.querySelectorAll('.tabs [role="tab"]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
+    const top = ['modes', 'gears', 'maps'].includes(tab);   // these tabs: navigation as the second row of tabs
+    $('sideModes').hidden = !modes || top;
+    $('sideGears').hidden = !gears || top;
+    syncSubTabs(top, self);
     [...$('gearList').children].forEach(b => {
       const gi = +b.dataset.g;
       b.setAttribute('aria-selected', gi === state.cell.gear);
       b.querySelector('.pk-use').textContent = D.VEHICLE_MODES.map(m => `${MODE_NAMES[m]} M${D.allocation[m][gi]}`).join(' · ');
     });
-    $('sideCtx').hidden = !(tab === 'maps' || tab === 'user');
+    $('sideCtx').hidden = !((tab === 'maps' && !top) || tab === 'user');
     // Map details (left column) for the selected map: riding-mode usage, μ levels calculation, interpolation style
     $('mapDetails').hidden = !['modes', 'gears', 'maps'].includes(tab) || noSel();
     // legend under the graph, in the selected line's colour
@@ -920,7 +974,7 @@
     const tableOn = modes || gears || tab === 'maps';
     $('chart').hidden = tab === 'settings';
     $('tableView').hidden = !tableOn || noSel();
-    $('copyMap').hidden = $('pasteWrap').hidden = !tableOn || noSel();
+    $('copyMap').hidden = $('pasteWrap').hidden = !tableOn || noSel() || top;   // riding modes / gears / maps: Import and Export only
     syncPaste(self);
     [...$('reduction').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.v === D.settings.reduction));
     syncDtcMode();
