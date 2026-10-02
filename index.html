@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRCK Traction Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="appbar">
+  <div class="appbar-in">
+    <span class="brand">M Race Calibration</span>
+    <span class="material-icons appbar-sep" aria-hidden="true">chevron_right</span>
+    <h1 class="appbar-title">Traction Control</h1>
+    <span class="appbar-file" id="fileName"></span>
+    <div class="spacer"></div>
+    <div class="hist-ctl" role="group" aria-label="History">
+      <button id="undo" class="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><span class="material-icons" aria-hidden="true">undo</span></button>
+      <button id="histBtn" class="icon-btn" title="Show changes" aria-label="Show changes" aria-expanded="false" aria-controls="history"><span class="material-icons" aria-hidden="true">expand_more</span></button>
+      <button id="redo" class="icon-btn" title="Redo (Ctrl+Y)" aria-label="Redo" disabled><span class="material-icons" aria-hidden="true">redo</span></button>
+    </div>
+  </div>
+</header>
+
+<!-- Change history: slides in from the right -->
+<aside class="history" id="history" aria-label="Changes" aria-hidden="true">
+  <div class="history-head">
+    <span>Changes</span>
+    <button id="histClose" class="icon-btn" title="Close" aria-label="Close changes"><span class="material-icons" aria-hidden="true">close</span></button>
+  </div>
+  <ol class="history-list" id="histList"></ol>
+</aside>
+
+<div class="app">
+  <div class="tabbar">
+  <div class="tabs" role="tablist" aria-label="View">
+    <button role="tab" id="tabModes" data-tab="modes" aria-controls="chart">Riding modes</button>
+    <button role="tab" id="tabGears" data-tab="gears" aria-controls="chart">Gears</button>
+    <button role="tab" id="tabMaps" data-tab="maps" aria-controls="chart">All slip target maps</button>
+    <button role="tab" id="tabSettings" data-tab="settings" aria-controls="settingsPanel">Settings</button>
+    <button role="tab" id="tabUser" data-tab="user" aria-controls="shiftPanel">+- Buttons</button>
+  </div>
+    <div class="group view-actions" id="viewActions">
+      <button id="log" class="ico-btn" aria-pressed="false"><span class="material-icons" aria-hidden="true">upload_file</span><span id="logName">Import logged data</span></button>
+      <button id="logClear" class="icon-btn" title="Hide the logged data" aria-label="Hide the logged data" hidden><span class="material-icons" aria-hidden="true">close</span></button>
+      <input type="file" id="logFile" accept=".ld" hidden>
+      <button id="copyMap" class="ico-btn" title="Copy this map (all μ lines)"><span class="material-icons" aria-hidden="true">content_copy</span>Copy</button>
+      <div class="split" id="pasteWrap">
+        <button id="pasteMap" class="ico-btn" disabled title="Paste the copied map here"><span class="material-icons" aria-hidden="true">content_paste</span>Paste</button>
+        <button id="pasteMenuBtn" class="split-arrow" title="Copy another map here" aria-label="Copy another map here" aria-haspopup="menu" aria-expanded="false" aria-controls="pasteMenu"><span class="material-icons" aria-hidden="true">arrow_drop_down</span></button>
+        <div class="menu" id="pasteMenu" role="menu" hidden></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout">
+  <!-- Left column: which map each vehicle mode / gear uses -->
+  <aside class="side" aria-label="Slip target allocation">
+    <!-- Contextual: map selector for the All slip target maps / User offset views -->
+    <div class="side-tabs" id="sideCtx" hidden>
+      <div class="picker-list ctx-list" id="mapList" role="listbox" aria-label="Slip target maps"></div>
+    </div>
+    <!-- Contextual: vehicle mode selector for the Modes view -->
+    <div class="side-tabs" id="sideModes" hidden>
+      <div class="picker-list ctx-list" id="modeList" role="listbox" aria-label="Vehicle modes"></div>
+    </div>
+
+    <!-- Contextual: gear selector for the Gears view -->
+    <div class="side-tabs" id="sideGears" hidden>
+      <div class="picker-list ctx-list" id="gearList" role="listbox" aria-label="Gears"></div>
+    </div>
+    <div class="side-h side-alloc-h"><span>Slip target allocation</span><button id="editMapBtn" class="ico-btn edit-map-btn"><span class="material-icons" aria-hidden="true">edit</span><span id="editMapTxt">Edit Map</span></button></div>
+    <table class="alloc-tbl" id="allocTbl"></table>
+    <p class="alloc-msg" id="allocMsg" aria-live="polite"></p>
+
+    <!-- Map details (Riding modes / Gears / All slip target maps, when a map is selected):
+         where it is used, μ levels calculation, interpolation style -->
+    <section class="side-block map-details" id="mapDetails" hidden aria-labelledby="mapDetailsH">
+      <div class="side-h side-h-row"><span id="mapDetailsH">Map details</span><span class="md-name" id="mdName"></span></div>
+      <div class="md-use" id="mdUse"></div>
+
+    <!-- μ levels calculation (moves into the Edit Map overlay while that is open) -->
+    <section class="mu-panel md-sub" id="muPanel" aria-label="μ levels calculation">
+      <div class="side-h side-h-row" style="text-transform:none">
+        <span>μ LEVELS CALCULATION</span>
+        <span class="info-tip">
+          <button class="icon-btn info-btn" id="muInfo" aria-label="How the μ levels are calculated" aria-describedby="muInfoTip"><span class="material-icons" aria-hidden="true">info</span></button>
+          <span class="info-pop" id="muInfoTip" role="tooltip"></span>
+        </span>
+      </div>
+      <div class="seg side-seg" id="muMode" role="group" aria-label="How the other μ lines are made">
+        <button data-v="uniform">Degressive</button>
+        <button data-v="ratio">Fix ratio</button>
+        <button data-v="fixed">Custom values</button>
+      </div>
+      <div class="mu-tables" id="muTables"></div>
+    </section>
+
+      <!-- Interpolation between the target points, for all graphs -->
+      <div class="md-sub" id="sideLine">
+        <div class="side-h">Interpolation calculation style</div>
+        <div class="seg side-seg" id="lineStyle" role="group" aria-label="Interpolation calculation style">
+          <button data-v="straight"><span class="material-icons" aria-hidden="true">show_chart</span>Straight</button>
+          <button data-v="smooth"><svg class="ico-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18.5C6 18.5 7 11.5 10 11.5S13.5 15.5 16 15.5 19 8 21.5 6"/></svg>Smooth</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Display (All slip target maps): μ levels on / off and which background maps are shown -->
+    <div class="side-block" id="sideShow" hidden>
+      <div class="side-h">Display</div>
+      <button class="switch" id="muLevelsSw" role="switch" aria-checked="true" title="Show the μ levels of the selected map">
+        <span class="material-icons" aria-hidden="true">toggle_on</span>Show μ levels
+      </button>
+      <div class="side-sub">Maps shown</div>
+      <div class="chip-list" id="mapFilter" role="group" aria-label="Maps shown in the background"></div>
+    </div>
+
+
+  </aside>
+
+  <main class="main">
+  <!-- Map picker for the active allocation cell -->
+  <section class="picker" id="picker" hidden aria-label="Choose map">
+    <div class="picker-head">
+      <div class="picker-title" id="pickerTitle"></div>
+      <button id="pickerClose" class="ico-btn"><span class="material-icons" aria-hidden="true">check</span>Done</button>
+    </div>
+    <div class="picker-body">
+      <div class="picker-list" id="pickerList" role="listbox" aria-label="Slip target maps"></div>
+      <div class="chart" id="pickChart"></div>
+    </div>
+  </section>
+
+  <div id="mainView">
+
+  <!-- Settings: DTC torque reduction method (manual 5.2) -->
+  <section class="panel" id="settingsPanel" hidden aria-label="Settings">
+    <h2 class="set-h">Reduction method</h2>
+      <div class="seg" id="reduction" role="group" aria-label="Reduction method">
+        <button data-v="retard">Ignition retard</button>
+        <button data-v="cut">Ignition cut</button>
+      </div>
+    <h2 class="set-h">Reduction Mode</h2>
+    <table class="sheet mode-tbl" id="dtcModeTbl" aria-label="DTC mode per riding mode"></table>
+  </section>
+
+  <!-- User offset: rider slip shift, steps -7..+7 on the LHS +/- buttons (manual 5.6) -->
+
+  <!-- +- Buttons: per-level sliders (left) and the example map (right), above the graph -->
+  <div class="shift-top" id="shiftPick" hidden>
+    <div class="mu-grid shift-fill">
+      <div class="mu-ctl stacked"><span class="mu-lbl">Factor per level</span>
+        <input type="range" min="0" max="0.1" step="0.005" id="shiftFac" aria-label="User factor change per level">
+        <input type="text" inputmode="decimal" id="shiftFacTxt" aria-label="User factor change per level value"></div>
+      <div class="mu-ctl stacked"><span class="mu-lbl">Offset per level</span>
+        <input type="range" min="0" max="1" step="0.05" id="shiftOff" aria-label="User offset change per level">
+        <input type="text" inputmode="decimal" id="shiftOffTxt" aria-label="User offset change per level value"><span class="mu-unit">%</span></div>
+    </div>
+    <label class="shift-pick"><span class="mu-lbl">Example map</span><select id="shiftMap"></select></label>
+  </div>
+  <div class="chart" id="chart"></div>
+  <!-- Legend under the graph (a map is selected) -->
+  <div class="chart-legend" id="chartLegend" hidden>
+    <span><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5" fill="#fff" stroke="currentColor" stroke-width="2"/></svg>Map point</span>
+    <span><svg viewBox="0 0 24 16" aria-hidden="true"><path d="M1 8H23" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/></svg>Map at μ 1.00</span>
+    <span><svg viewBox="0 0 24 16" aria-hidden="true"><path d="M1 8H23" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4 4"/></svg>Different μ levels</span>
+  </div>
+  <!-- +- Buttons: rider slip shift (user levels -7..+7), shown under the graph -->
+  <section class="panel shift-panel" id="shiftPanel" hidden aria-label="+- buttons">
+    <div class="mu-scroll"><table id="shiftTbl"></table></div>
+    <p class="alloc-msg" id="shiftMsg" aria-live="polite"></p>
+  </section>
+  <section class="table-view" id="tableView" hidden aria-label="Map table">
+    <div class="mu-scroll"><table id="mapTbl"></table></div>
+    <p class="alloc-msg" id="tvMsg" aria-live="polite"></p>
+  </section>
+  </div>
+  </main>
+  </div>
+</div>
+<!-- Map editor overlay (opened from the slip target allocation): the map graph, its data table and the Î¼ levels calculation -->
+<div class="editor" id="editor" hidden>
+  <div class="editor-box" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
+    <div class="editor-head">
+      <h2 id="editorTitle">Edit Map</h2>
+      <button id="editorClose" class="ico-btn"><span class="material-icons" aria-hidden="true">check</span>Done</button>
+    </div>
+    <div class="editor-body">
+      <div class="editor-side" id="editorSide"></div>
+      <div class="editor-main" id="editorMain"></div>
+    </div>
+  </div>
+</div>
+<script src="js/dataset.js"></script>
+<script src="js/data.js"></script>
+<script src="js/mu-lines.js"></script>
+<script src="js/sheet-grid.js"></script>
+<script src="js/slip-chart.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

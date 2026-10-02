@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slip Chart States</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div class="states">
+  <figure><figcaption>1 · Default</figcaption><div class="chart" id="s1"></div></figure>
+  <figure><figcaption>2 · Hover / drag</figcaption><div class="chart" id="s2"></div></figure>
+  <figure><figcaption>3 · Log data overlay</figcaption><div class="chart" id="s3"></div></figure>
+  <figure><figcaption>4 · Compare gears</figcaption><div class="chart" id="s4"></div></figure>
+</div>
+<script src="js/data.js"></script>
+<script src="js/slip-chart.js"></script>
+<script>
+  const D = window.MRCK_DATA;
+  const base = { muRows: D.MU_ROWS, log: D.log, alloc: D.allocation.Dry1 };
+  const own = () => JSON.parse(JSON.stringify(D.targets));
+  new SlipChart(document.getElementById('s1'), { ...base, targets: own() });
+  new SlipChart(document.getElementById('s2'), { ...base, targets: own(), hover: 3 });
+  new SlipChart(document.getElementById('s3'), { ...base, targets: own(), hover: 3, showLog: true });
+  new SlipChart(document.getElementById('s4'), { ...base, targets: own(), compare: true });
+</script>
+</body>
+</html>
