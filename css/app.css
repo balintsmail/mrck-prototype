@@ -642,7 +642,8 @@ body.no-scroll { overflow: hidden; }
 .lp-time .lp-sel-read { margin-top: 2px; }
 .lp-time .chip-list { margin-top: 0; }
 .lp-time > .lp-tl-h { margin-top: 10px; }
-/* track map (corners): 8px track, 2px cuts at corner ends, clicked corners blue */
+.lp-time > .lp-sel-read + .lp-corner-row { margin-top: 14px; }   /* timeline right below the laps, then the corners map */
+/* track map (corners and straights): 8px track, 1px cuts at corner ends, clicked parts blue */
 .lp-map-box[hidden] { display: none; }
 .lp-map { display: block; overflow: visible; font-family: 'Noto Sans', system-ui, sans-serif; }
 .lp-map .lp-trk, .lp-map .lp-c-line { fill: none; stroke: #4a4a52; stroke-width: 8px; stroke-linejoin: round; }
@@ -650,7 +651,7 @@ body.no-scroll { overflow: hidden; }
 .lp-map .lp-c { cursor: pointer; }
 .lp-map .lp-c:hover .lp-c-line { stroke: #6e6e78; }
 .lp-map .lp-c.is-on .lp-c-line { stroke: #3f8ce8; }
-.lp-map .lp-cut { fill: none; stroke: var(--bg); stroke-width: 2px; pointer-events: none; }
+.lp-map .lp-cut { fill: none; stroke: var(--bg); stroke-width: 1px; pointer-events: none; }
 .lp-map .lp-c-num { fill: var(--muted); font-size: 9px; font-weight: 700; cursor: pointer; user-select: none; }
 .lp-map .lp-c-num.is-on { fill: #3f8ce8; }
 .lp-link { margin-left: auto; height: auto; padding: 0; border: 0; background: none; color: #3f8ce8; font-size: 11px; font-weight: 700; }

@@ -28,8 +28,9 @@ left column under the allocation table (on +- Buttons, which has no left column,
 - **Gears** 1–6 and **μ** (`mu_x_rear`, −0.25 … 1.6; the ends are open, the bar between them can be dragged; full range on import, when its auto switch is turned off, and on double-click).
   *Automatically adjust* follows the graph: the gears whose slip targets are selected (on by default) and the μ range of the
   selected μ level, half-way to its neighbours (off by default). Changing a filter by hand switches it off.
-- **Timeline**: laps (from `Running Lap Time`), or drag a section / its ends; **Corners** detected from the lean angle
-  (|lean| ≥ 15° reaching 30°, numbered in track order on the fastest lap, matched on the other laps by `s_track` distance)
+- **Timeline**: laps (from `Running Lap Time`), or drag a section / its ends; **Corners & straights** on a track map from GPS
+  (fastest lap): corners detected from the lean angle (|lean| ≥ 15° reaching 30°, numbered in track order on the fastest lap,
+  matched on the other laps by `s_track` distance), straight n from corner n to the next one; click them to filter (blue)
 
 ## Export MRCK
 

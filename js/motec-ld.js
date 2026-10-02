@@ -113,7 +113,8 @@
       d.redSource = 'md_req − md_tgt_dtc';
     } else { d.red = null; d.redSource = null; }
     d.laps = findLaps(opt('Running Lap Time'), duration);
-    d.corners = findCorners(d, opt('s_track'));
+    d.straights = [];
+    d.corners = findCorners(d, opt('s_track'));      // also fills d.straights and d.refLap
     return d;
   }
 
@@ -184,6 +185,25 @@
       });
       if (best) best.ranges.push([c.i0 / rate, (c.i1 + 1) / rate]);
     });
+    // Straights: straight n runs from the end of corner n to the start of the next corner (the last one over the
+    // start / finish line to corner 1), by lap distance. Every sample of every lap whose lap distance falls in one is
+    // part of it (samples before the lap start of the out lap / after the in lap's lap length, i.e. the pit lane, are not).
+    const nRef = refs.length;
+    const spans = refs.map((r, k) => {
+      const nx = refs[(k + 1) % nRef], last = k === nRef - 1;
+      return { from: r.at1, to: last ? nx.at0 + refLen : nx.at0, ref: last ? [[r.ref[1], ref.b], [ref.a, nx.ref[0]]] : [[r.ref[1], nx.ref[0]]] };
+    });
+    const runs = spans.map(() => []), open = spans.map(() => null);
+    for (let i = 0; i < n; i++) {
+      const t = i / rate, p = pos(t), ok = p >= 0 && p <= refLen + tol;
+      spans.forEach((s, k) => {
+        const inS = ok && ((p >= s.from && p < s.to) || (s.to > refLen && p < s.to - refLen));
+        if (inS && !open[k]) runs[k].push(open[k] = [t, t + 1 / rate]);
+        else if (inS) open[k][1] = t + 1 / rate;
+        else open[k] = null;
+      });
+    }
+    d.straights = spans.map((s, k) => ({ n: k + 1, ranges: runs[k].filter(([a, b]) => b - a >= 0.3), ref: s.ref }));
     return refs.map(r => ({ n: r.n, ranges: r.ranges, ref: r.ref, apex: r.apex }));
   }
 
