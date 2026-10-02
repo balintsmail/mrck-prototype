@@ -5,7 +5,7 @@
   const GEAR_COLORS = SlipChart.GEAR_COLORS;
   const $ = id => document.getElementById(id);
 
-  const state = { tab: 'modes', targetIndex: 0, muIndex: D.MU_BASE, showLog: false, vmode: 'Dry1' };
+  const state = { tab: 'modes', targetIndex: 0, muIndex: D.MU_BASE, vmode: 'Dry1' };
   // Start with no map selected on Modes / Gears / All slip target maps: every map is drawn the same
   // until one is picked (line, label, map list, allocation cell). Picking a mode or gear does not select a map.
   state.noSel = true;
@@ -16,7 +16,7 @@
   const indexOf = id => D.targets.findIndex(t => t.id === id);
 
   const chart = new SlipChart($('chart'), {
-    targets: D.targets, muRows: D.MU_ROWS, log: D.log,
+    targets: D.targets, muRows: D.MU_ROWS, log: null,
     onEditStart() { pushUndo(); },
     // μ lines: Degressive follows the edited anchors; Ratio recalculates every other line from the edited one.
     onChange(t) { if (t.mu && t.mu.mode === 'ratio') t.mu.ref = state.muIndex; MuLines.derive(t); syncMuPanel(); },   // ratio: the edited line is the reference
@@ -466,24 +466,55 @@
 
   function allMapsOverlays() {
     const self = D.targets[state.targetIndex];
-    const na = noSel();                          // nothing selected: every map at full strength
-    const a = na ? 1 : state.showMu ? 0.25 : 0.5;  // without μ levels the other maps are stronger
-    return D.targets.filter(t => (na || t.id !== self.id) && mapShown(t.id)).map(t => ({
+    const na = noSel();
+    // Nothing selected: the maps of the filter (all when none chosen). A map selected: only the maps the user
+    // added in the filter, next to it, at full strength.
+    const shown = id => (na ? mapShown(id) : id !== self.id && state.mapFilter.has(id));
+    return D.targets.filter(t => shown(t.id)).map(t => ({
       key: 't' + t.id, target: t.id, locked: false, dotted: false, color: mapColor(t.id),
       lean: t.lean, vals: t.rows[state.muIndex], label: 'M' + t.id, tip: `Click to edit Map ${t.id}`,
-      alpha: a, labelAlpha: na ? 1 : 0.5,      // background line 25 % (50 % without μ levels), name 50 %; full on hover
+      alpha: 1, labelAlpha: 1,
     }));
   }
 
-  // Import logged data: the system file browser, MoTeC .ld files only. The prototype shows the
-  // simulated log (data.js) for the chosen file; the file itself is not parsed.
+  // Import MOTEC data: the system file browser, MoTeC .ld files only. The file is read in the browser
+  // (motec-ld.js); the panel below the graph (log-panel.js) filters it and the graph draws the result behind
+  // the slip targets: left and right lean on the same side (|lean|), slip >= 0 % only.
+  const logView = new LogPanel($('logPanel'), {
+    muRows: D.MU_ROWS,
+    geom: () => chart.g,                          // the reduction graph and timeline line up with the slip-target graph
+    onChange(sel) { chart.o.log = sel; renderChart(); },   // renderChart passes showLog, soloActive and the μ filter band
+  });
   $('log').onclick = () => { $('logFile').value = ''; $('logFile').click(); };
-  $('logFile').onchange = e => {
+  $('logFile').onchange = async e => {
     const f = e.target.files[0];
     if (!f) return;
-    state.logName = f.name; state.showLog = true; sync();
+    let data;
+    try { data = MotecLd.sessionData(MotecLd.parse(await f.arrayBuffer())); } catch (err) {
+      alert(`Could not read ${f.name}:\n${err.message}`);
+      return;
+    }
+    state.logName = f.name;
+    logView.load(data, f.name);
+    sync();
   };
-  $('logClear').onclick = () => { state.showLog = false; state.logName = null; sync(); };
+  $('logClear').onclick = () => { state.logName = null; logView.clear(); sync(); };
+
+  // What the graph shows, for the log filters' "Automatically adjust":
+  // gears (1..6) whose slip targets are selected, and the μ range of the selected μ level (half-way to its neighbours).
+  function graphGears() {
+    const all = [0, 1, 2, 3, 4, 5], id = D.targets[state.targetIndex].id;
+    let gs;
+    if (state.tab === 'gears') gs = [state.cell.gear];
+    else if (noSel()) gs = all;
+    else if (state.tab === 'modes') gs = all.filter(g => D.allocation[state.vmode][g] === id);
+    else gs = all.filter(g => D.VEHICLE_MODES.some(m => D.allocation[m][g] === id));   // all slip target maps / +- buttons: any riding mode
+    return (gs.length ? gs : all).map(g => g + 1);
+  }
+  function graphMuBand() {
+    const r = D.MU_ROWS, i = state.muIndex;
+    return [i > 0 ? (r[i - 1] + r[i]) / 2 : -Infinity, i < r.length - 1 ? (r[i] + r[i + 1]) / 2 : Infinity];
+  }
 
   // --- Export MRCK: the traction-control maps and settings edited here are written into the base calibration
   // base/DatasetSTK_EBOL_10to15.bmwrc25 (valid CRCs, see bmwrc25.js) and the result is downloaded.
@@ -735,7 +766,7 @@
 
   // --- Map picker for the active cell: 15 maps + chart of all maps ----------
   const pickChart = new SlipChart($('pickChart'), {
-    targets: D.targets, muRows: D.MU_ROWS, log: D.log, editable: false, rowsHidden: true,
+    targets: D.targets, muRows: D.MU_ROWS, editable: false, rowsHidden: true,
     onSelectTarget(id) { assignCell(id); },
   });
   $('pickerList').innerHTML = D.targets.map(t =>
@@ -910,6 +941,14 @@
     const ch = $('chart');
     if (state.editor) { fitEditor(); return; }   // the graph sits in the editor overlay
     if (ch.hidden) return;
+    // the log panel sits between the graph and the table; it is scrolled to and does not shrink the graph
+    const lp = $('logPanel'), lpHidden = lp.hidden;
+    lp.hidden = true;
+    fitChart(ch);
+    lp.hidden = lpHidden;
+  }
+  function fitChart(ch) {
+    const root = document.documentElement.style;
     const left = ['modes', 'gears', 'maps'].includes(state.tab);
     const topOf = () => ch.getBoundingClientRect().top + window.scrollY;
     let reserve = 0, top = topOf();
@@ -932,6 +971,9 @@
   function sync() {
     // a different map starts on its μ 1.00 level
     if (state.targetIndex !== state.lastTarget) { state.muIndex = D.MU_BASE; state.lastTarget = state.targetIndex; }
+    // deselecting the map goes back to the default view: every map shown (maps added to the filter are cleared)
+    if (state.noSel && !state.wasNoSel) state.mapFilter.clear();
+    state.wasNoSel = state.noSel;
     requestAnimationFrame(fitMain);
     const modes = state.tab === 'modes', gears = state.tab === 'gears';
     const alloc = D.allocation[state.vmode];
@@ -997,10 +1039,14 @@
       b.setAttribute('aria-selected', m === state.vmode);
       b.querySelector('.pk-use').textContent = D.allocation[m].map((id, gi) => `#${gi + 1} M${id}`).join(' · ');
     });
-    $('log').setAttribute('aria-pressed', state.showLog);
-    $('logName').textContent = state.showLog && state.logName ? state.logName : 'Import logged data';
-    $('log').title = state.showLog ? 'Import another log file' : '';
-    $('logClear').hidden = !state.showLog || tab === 'settings';
+    const logged = logView.loaded;
+    $('log').setAttribute('aria-pressed', logged);
+    $('logName').textContent = logged ? state.logName : 'Import MOTEC data';
+    $('log').title = logged ? 'Import another log file' : '';
+    $('logClear').hidden = !logged || tab === 'settings';    // log adjusters: in the left column; at the top of the log panel on tabs without one (+- Buttons)
+    if (tab === 'user') { if (logView.side.parentNode !== $('logPanel')) $('logPanel').prepend(logView.side); }
+    else if (logView.side.parentNode !== $('sideLog')) $('sideLog').appendChild(logView.side);
+    logView.setContext({ visible: tab !== 'settings', gears: graphGears(), muBand: graphMuBand() });
 
     syncHistory();
     syncMuPanel();
@@ -1028,7 +1074,11 @@
       targets: D.targets,
       targetIndex: state.targetIndex,
       muIndex: state.muIndex,
-      showLog: state.showLog,
+      showLog: logView.show,
+      // MoTeC data shown and a map selected: only that map is drawn (no other maps or their labels),
+      // and its μ band covers only the μ range of the log's μ filter
+      soloActive: logView.show && !na,
+      muBand: logView.muFilter,
       alloc: D.allocation[state.vmode].slice(),
       compare: state.tab === 'modes' || state.tab === 'gears',
       series: state.tab === 'gears' ? gearSeries() : null,

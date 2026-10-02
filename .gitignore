@@ -1,3 +1,8 @@
 # local backups of earlier dataset versions
 data-backups/
 *.local.bmwrc25
+# generated MoTeC viewer pages (contain logged data)
+tools/motec/*_lean_slip.html
+# local MoTeC test logs
+*.ld
+*.ldx

@@ -194,7 +194,7 @@ kbd { font: inherit; font-weight: 700; color: var(--text); }
 .ico-btn .material-icons { font-size: 17px; }
 .icon-seg button { width: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .icon-seg button .material-icons { font-size: 18px; }
-.slip-chart .mi { font-family: 'Material Icons'; font-weight: normal; font-style: normal; font-feature-settings: 'liga'; }
+.slip-chart .mi { font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal; font-feature-settings: 'liga'; }
 
 /* ---------- map picker ---------- */
 .picker-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0 12px; border-bottom: 1px solid var(--grid); margin-bottom: 12px; }
@@ -487,6 +487,12 @@ html { scrollbar-gutter: stable; }   /* same width whether or not the page scrol
 body.no-scroll { overflow: hidden; }
 @media (max-width: 899px) { .editor { padding: 0; } .editor-box { height: 100vh; border-radius: 0; } .editor-body { grid-template-columns: 1fr; } .editor-main .chart { flex: none; height: 60vw; } }
 #logClear[hidden] { display: none; }
+/* Import MOTEC data: once a log is loaded, its × (hide) sits inside the button, at the right end */
+.log-wrap { position: relative; display: inline-flex; }
+.log-wrap:has(#logClear:not([hidden])) #log { padding-right: 32px; }
+.log-wrap #logClear { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 24px; height: 22px; border-radius: 2px; }
+.log-wrap #logClear .material-icons { font-size: 17px; }
+.log-wrap #logClear:hover { background: rgba(255, 255, 255, .18); }
 #mapList .pk { height: 28px; min-height: 28px; padding-top: 0; padding-bottom: 0; box-sizing: border-box; }   /* map list rows: 28px */
 /* ---------- left column: Map details (selected map) ---------- */
 .map-details > .side-h-row { margin-bottom: 6px; }
@@ -557,3 +563,96 @@ body.no-scroll { overflow: hidden; }
 .side::-webkit-scrollbar-thumb { background: #3a3d48; border-radius: 6px; border: 3px solid var(--bg); }
 .side::-webkit-scrollbar-thumb:hover { background: #555a68; }
 .map-details > .side-h-row { flex-direction: column; align-items: flex-start; gap: 10px; }   /* map name below the MAP DETAILS label */
+/* Google Material Symbols (Outlined), as on fonts.google.com/icons: the app's .material-icons spans use this font */
+.material-icons {
+  font-family: 'Material Symbols Outlined'; font-weight: normal; font-style: normal; line-height: 1;
+  letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap; word-wrap: normal; direction: ltr;
+  -webkit-font-smoothing: antialiased; font-feature-settings: 'liga';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+}
+.slip-chart .mi { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20; }
+.switch .material-icons { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }   /* switches stay filled pills */
+/* Import / Export (and the other action buttons next to the tabs): 20 % white background, 5 % on hover */
+#viewActions .ico-btn:not(:disabled) { background: rgba(255, 255, 255, .2); transition: background .2s; }
+#viewActions .ico-btn:not(:disabled):hover { background: rgba(255, 255, 255, .05); }
+/* ---------- imported MoTeC log, below the graph (log-panel.js) ---------- */
+.log-panel { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--grid); }
+.log-panel[hidden] { display: none; }
+.lp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
+.lp-head .switch { margin-left: -4px; }
+.lp-info { color: var(--muted); font-size: 11px; font-weight: 600; }
+.lp-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 600; }
+.lp-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.lp-legend svg { width: 26px; height: 12px; }
+.log-panel.is-off .lp-body { display: none; }
+.lp-cap { margin: 14px 0 2px; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.lp-cap span { text-transform: none; letter-spacing: 0; font-weight: 600; }
+.lp-red-box { position: relative; height: 180px; }
+.lp-red-svg { display: block; position: absolute; inset: 0; overflow: visible; font-family: 'Noto Sans', system-ui, sans-serif; }
+.lp-red-svg .ax { fill: var(--text); font-weight: 700; }
+.lp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 32px; }
+.lp-row[hidden] { display: none; }
+.lp-lbl { width: 62px; flex: none; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.lp-row .switch { padding-right: 10px; }
+.lp-read { color: var(--muted); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.lp-chip small { color: inherit; opacity: .7; font-weight: 600; margin-left: 4px; }
+.lp-chip { padding: 0 8px; }
+/* μ slider: two ends + a draggable bar between them */
+.lp-mu { flex: 1 1 260px; max-width: 520px; min-width: 200px; padding: 0 8px; }
+.lp-range { position: relative; height: 24px; touch-action: none; cursor: pointer; }
+.lp-track { position: absolute; left: 0; right: 0; top: 10px; height: 4px; border-radius: 2px; background: var(--line); }
+.lp-bar { position: absolute; top: 7px; height: 10px; border-radius: 3px; background: #3f8ce8; cursor: grab; }
+.lp-range.is-moving, .lp-range.is-moving .lp-bar { cursor: grabbing; }
+.lp-thumb { position: absolute; top: 3px; width: 12px; height: 18px; margin-left: -6px; border-radius: 3px; background: #fff; border: 2px solid #3f8ce8; box-sizing: border-box; cursor: ew-resize; }
+.lp-thumb:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.lp-ticks { position: relative; height: 14px; color: var(--muted); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.lp-ticks span { position: absolute; transform: translateX(-50%); }
+.lp-tl-box { margin-top: 4px; }
+.lp-tl { display: block; touch-action: none; }
+.lp-lbl-mu { text-transform: none; font-size: 13px; }
+/* logged data adjusters in the left column (log-panel.js, this.side) */
+.lp-side { margin-top: 18px; }
+.lp-side[hidden] { display: none; }
+.lp-side > .side-h { margin-top: 0; }
+.lp-side .switch { margin-left: -4px; }
+.lp-side .lp-info { color: var(--muted); font-size: 11px; font-weight: 600; margin: 2px 0 4px; }
+.lp-sub { display: flex; align-items: center; gap: 4px 10px; margin-top: 10px; }
+.lp-sub .side-sub { margin: 0; min-width: 44px; }
+.lp-sub .lp-read { margin-left: auto; }
+.lp-side .chip-list { margin-top: 4px; }
+.lp-side .lp-mu { max-width: none; min-width: 0; padding: 6px 8px 0; }
+.lp-side.is-off .lp-side-body, .log-panel.is-off .lp-head { display: none; }
+.log-panel > .lp-side { margin: 0 0 12px; max-width: 360px; }   /* docked in the panel (+- Buttons, no left column) */
+.lp-ticks span:first-child { transform: translateX(-8px); } .lp-ticks span:last-child { transform: translateX(calc(-100% + 8px)); }   /* end labels stay inside the column */
+/* μ slider track = the μ colour scale (legend of the reduction graph); outside the range dimmed, the range outlined */
+.lp-track { top: 7px; height: 10px; border-radius: 3px; }
+.lp-dim { position: absolute; top: 7px; height: 10px; background: rgba(12, 12, 18, .78); pointer-events: none; }
+.lp-dim-l { left: 0; border-radius: 3px 0 0 3px; }
+.lp-dim-r { right: 0; border-radius: 0 3px 3px 0; }
+.lp-bar { top: 5px; height: 14px; background: transparent; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .85); box-sizing: border-box; }
+/* left column: "Logged data filters" — each filter (label, control, its Automatically adjust switch below) well apart */
+.lp-side .lp-filters-h { margin: 30px 0 8px; padding-top: 30px; border-top: 1px solid var(--grid); }   /* same spacing as the divider above "Logged data" (.side .side-block) */
+.lp-filter { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin-top: 22px; }
+.lp-filter > .lp-sub, .lp-corner-row > .lp-sub { margin-top: 0; }
+.lp-filter > .switch { align-self: flex-start; margin-top: 2px; }
+.lp-filter .lp-mu { flex: none; padding-top: 2px; }   /* not the row layout's flex-basis (would become height here) */
+.lp-corner-row { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.lp-corner-row[hidden] { display: none; }
+.lp-time .lp-tl-box { margin-top: 0; }
+.lp-time .lp-sel-read { margin-top: 2px; }
+.lp-time .chip-list { margin-top: 0; }
+.lp-time > .lp-tl-h { margin-top: 10px; }
+/* track map (corners): 8px track, 2px cuts at corner ends, clicked corners blue */
+.lp-map-box[hidden] { display: none; }
+.lp-map { display: block; overflow: visible; font-family: 'Noto Sans', system-ui, sans-serif; }
+.lp-map .lp-trk, .lp-map .lp-c-line { fill: none; stroke: #4a4a52; stroke-width: 8px; stroke-linejoin: round; }
+.lp-map .lp-c-hit { fill: none; stroke: transparent; stroke-width: 16px; }
+.lp-map .lp-c { cursor: pointer; }
+.lp-map .lp-c:hover .lp-c-line { stroke: #6e6e78; }
+.lp-map .lp-c.is-on .lp-c-line { stroke: #3f8ce8; }
+.lp-map .lp-cut { fill: none; stroke: var(--bg); stroke-width: 2px; pointer-events: none; }
+.lp-map .lp-c-num { fill: var(--muted); font-size: 9px; font-weight: 700; cursor: pointer; user-select: none; }
+.lp-map .lp-c-num.is-on { fill: #3f8ce8; }
+.lp-link { margin-left: auto; height: auto; padding: 0; border: 0; background: none; color: #3f8ce8; font-size: 11px; font-weight: 700; }
+.lp-link:hover { text-decoration: underline; }
+.lp-link[hidden] { display: none; }

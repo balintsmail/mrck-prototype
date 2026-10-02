@@ -10,7 +10,26 @@ Plain HTML, CSS and JavaScript, no build step: open `index.html` or serve the fo
 - `js/sheet-grid.js`: spreadsheet-style tables (copy / paste with Excel)
 - `js/mu-lines.js`: μ level calculation (Degressive, Fix ratio, Custom values)
 - `js/data.js`, `js/dataset.js`: data model and the imported calibration
+- `js/motec-ld.js`: reads MoTeC `.ld` logs in the browser for **Import MOTEC data** (format: `docs/motec-ld-format.md`)
+- `js/log-panel.js`: the imported log's filters, timeline and DTC torque reduction graph below the slip-target graph
 - `tools/`: Perl scripts used to extract and prepare the dataset from `.bmwrc25` files
+- `tools/motec/`: MoTeC `.ld` reader (C#) and a standalone lean / slip / mu_x analysis page builder
+
+## Import MOTEC data
+
+Select a MoTeC `.ld` file: it is read in the browser and `slip` is drawn behind the slip targets over the lean angle.
+Left and right lean angles are shown together (|lean|), as the slip targets apply to both sides; only slip ≥ 0 % is shown.
+The ECU's own slip target (`slip_tgt`) is the dotted white line. While a map is selected, only that map is drawn, and a μ filter
+limits its μ band (20 %) to the filtered range. `js/log-panel.js`: the show switch and the "Logged data filters" (gears, μ, laps / corners, timeline) sit in the
+left column under the allocation table (on +- Buttons, which has no left column, above the panel); the reduction graph is below the graph:
+
+- **Show logged data** switch (the × on the import button removes the log)
+- **DTC torque reduction** [Nm] over the same lean axis: `md_dtc_reduction`, or `md_req − md_tgt_dtc` when that channel is not logged
+- **Gears** 1–6 and **μ** (`mu_x_rear`, −0.25 … 1.6; the ends are open, the bar between them can be dragged; full range on import, when its auto switch is turned off, and on double-click).
+  *Automatically adjust* follows the graph: the gears whose slip targets are selected (on by default) and the μ range of the
+  selected μ level, half-way to its neighbours (off by default). Changing a filter by hand switches it off.
+- **Timeline**: laps (from `Running Lap Time`), or drag a section / its ends; **Corners** detected from the lean angle
+  (|lean| ≥ 15° reaching 30°, numbered in track order on the fastest lap, matched on the other laps by `s_track` distance)
 
 ## Export MRCK
 

@@ -66,48 +66,6 @@
     targets.push(makeTarget(id, T1_LEAN, deriveRows(mu1)));
   }
 
-  // Deterministic PRNG for the simulated log data.
-  function rng(seed) {
-    return function () {
-      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-
-  // Simulated MoTeC log: corner exits (phi_lean falling, slip rising), sampled
-  // as [lean, slip, mu_x]. Traces cluster around mu rows so the overlay follows
-  // the active row.
-  function makeLog() {
-    const r = rng(25);
-    const traces = [];
-    MU_ROWS.forEach((mu, mi) => {
-      const count = 7 + (mi === MU_BASE ? 5 : 0);
-      for (let t = 0; t < count; t++) {
-        const start = 56 + r() * 5;
-        const end = r() < 0.4 ? 32 + r() * 14 : r() * 6;
-        const peak = (DS ? 5 + mi * 1.1 : Math.max(2, T1_ROWS[mi][3])) * (0.7 + r() * 0.5);
-        const tail = 0.2 + r() * 0.5;                          // slip level once upright
-        const pts = [];
-        let lean = start, noise = 0, drift = 0;
-        while (lean > end) {
-          const p = (start - lean) / (start - 40);            // 0 at apex, 1 at ~40 deg
-          drift = drift * 0.97 + (r() - 0.5) * 0.35;
-          const base = p < 1 ? peak * Math.pow(p, 0.8)
-            : peak * (tail + (1 - tail) * Math.exp(-(40 - lean) / 8)) + drift;
-          noise = noise * 0.6 + (r() - 0.5) * (lean > 40 ? 3.2 : 1.2);
-          const spike = r() < 0.04 ? r() * 3.5 : 0;
-          const slip = Math.max(0, Math.min(19.5, base + noise + spike));
-          pts.push([+lean.toFixed(2), +slip.toFixed(2), +(mu + (r() - 0.5) * 0.2).toFixed(3)]);
-          lean -= lean > 40 ? 0.12 + r() * 0.3 : 0.25 + r() * 0.6;
-        }
-        traces.push({ mu, pts });
-      }
-    });
-    return traces;
-  }
-
   // Slip Target Allocation (STK): slip-target map id per gear 1..6, per vehicle mode.
   const VEHICLE_MODES = ['Rain', 'Int', 'Dry1', 'Dry2'];
   const allocation = DS ? JSON.parse(JSON.stringify(DS.allocation)) : {
@@ -130,5 +88,5 @@
     off: SHIFT_STEPS.map(k => +(-k * 0.4).toFixed(1)),
   };
 
-  window.MRCK_DATA = { source: DS ? DS.source : null, MU_ROWS, MU_BASE, targets, VEHICLE_MODES, allocation, settings, SHIFT_STEPS, userShift, log: makeLog() };
+  window.MRCK_DATA = { source: DS ? DS.source : null, MU_ROWS, MU_BASE, targets, VEHICLE_MODES, allocation, settings, SHIFT_STEPS, userShift, log: [] };   // log: MoTeC traces, filled by Import MOTEC data (motec-ld.js)
 })();

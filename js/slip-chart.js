@@ -23,7 +23,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (x, x0, x1, y0, y1) => y0 + (y1 - y0) * (x - x0) / (x1 - x0);
   const r1 = v => Math.round(v * 10) / 10;
-  // Google Material Icons (filled) glyph, drawn as SVG text via the icon font's ligatures.
+  // Google Material Symbols (Outlined) glyph, drawn as SVG text via the icon font's ligatures.
   const icon = (name, x, y, size, color) =>
     `<text class="mi" x="${Math.round(x * 100) / 100}" y="${Math.round(y * 100) / 100}" font-size="${size}" fill="${color}" text-anchor="middle" dominant-baseline="central">${name}</text>`;
 
@@ -189,11 +189,14 @@
           if (i === mi) return;
           list.unshift({ key: 'mu' + i, mu: i, lean: t.lean, vals: t.rows[i], color: active.color,
             dotted: true, tip: muTip(m, i), locked: isLocked(i),
-            label: m === 1 ? fmtMu(m) : undefined });   // μ 1.00 stays labelled (clickable) while another level is selected
+            // μ 1.00 stays labelled (clickable) while another level is selected; with MoTeC data (soloActive) every level is
+            label: m === 1 || this.o.soloActive ? fmtMu(m) : undefined });
         });
+        if (this.o.soloActive) active.label += ' · ' + fmtMu(this.o.muRows[mi]);   // the bold line among the μ labels
       }
       Object.assign(active, { lean: t.lean, vals: this.o.activeVals || t.rows[mi], gradient: true });   // activeVals: read-only stand-in (e.g. a selected +- level)
-      return { list, active };
+      // soloActive (a map is selected while MoTeC data is shown): the other maps' lines and labels are hidden
+      return { list: this.o.soloActive ? list.filter(c => c.target == null) : list, active };
     }
 
     // ---- render ---------------------------------------------------------
@@ -250,7 +253,7 @@
       for (let x = X_MAX; x >= X_MIN; x -= g.xStep)
         out.push(`<text class="ax" x="${f(g.px(x))}" y="${f(g.y1 + 17 * s)}" text-anchor="middle" dominant-baseline="central" font-size="${axisFs}">${x}°</text>`);
 
-      if (this.o.showLog) out.push(this._logPath(g, mu));
+      if (this.o.showLog && this.o.log) out.push(this._logPath(g));
 
       const tsm = !!t.smooth;          // interpolation style is a setting of each map (target.smooth)
       const pts = (lean, vals, sm = tsm) => curvePoints(lean, vals, sm);
@@ -273,13 +276,21 @@
         }
         return `<defs>${defs.join('')}</defs><g clip-path="url(#${id}-plot)" ${fx(key)} pointer-events="none">${shapes.join('')}</g>`;
       };
-      // μ levels: 10 % band of the edited map's colour between its top and bottom μ rows.
+      // μ levels: 10 % band of the edited map's colour between its top and bottom μ rows; with a μ filter (20 %)
+      // (muBand [lo, hi], the log's μ slider) only between the map's values at those μ (interpolated between rows).
       const na = !!this.o.noActive;            // no map selected: draw every map the same, nothing bold / editable
       if ((this.o.compare || !this.o.rowsHidden) && !this.o.muHidden && !na) {
-        const top = pts(t.lean, t.rows[t.rows.length - 1]), bot = pts(t.lean, t.rows[0]).reverse();
+        const mr = this.o.muRows, band = this.o.muBand || [-Infinity, Infinity];
+        const rowAt = m => {
+          if (m <= mr[0]) return t.rows[0];
+          if (m >= mr[mr.length - 1]) return t.rows[mr.length - 1];
+          const i = mr.findIndex((v, k) => m >= v && m <= mr[k + 1]), u = (m - mr[i]) / (mr[i + 1] - mr[i]);
+          return t.rows[i].map((v, j) => v + (t.rows[i + 1][j] - v) * u);
+        };
+        const top = pts(t.lean, rowAt(band[1])), bot = pts(t.lean, rowAt(band[0])).reverse();
         const d = top.map(([x, y], i) => `${i ? 'L' : 'M'}${f(g.px(x))} ${f(g.py(y))}`).join('') +
           bot.map(([x, y]) => `L${f(g.px(x))} ${f(g.py(y))}`).join('') + 'Z';
-        out.push(`<path d="${d}" fill="${active.color}" fill-opacity=".1" ${fx('active')} pointer-events="none"/>`);
+        out.push(`<path d="${d}" fill="${active.color}" fill-opacity="${this.o.muBand ? '.2' : '.1'}" ${fx('active')} pointer-events="none"/>`);   // μ filtered: 20 %
       }
       if (!na && !this.o.noGlow) out.push(gradient(active, 'active'));
 
@@ -388,24 +399,35 @@
       }
     }
 
-    _logPath(g, mu) {
-      const key = [g.W, g.H, mu].join('|');
-      if (this._logKey === key) return this._logSvg;
+    // Imported MoTeC log (filtered by the app, see log-panel.js): o.log = { traces, target }, each a list of
+    // [[|lean|, slip %], ...] runs. Logged slip: thin grey line with x markers; ECU slip target: dotted white line.
+    _logPath(g) {
+      const key = [g.W, g.H, g.yMax].join('|');
+      if (this._logKey === key && this._logSrc === this.o.log) return this._logSvg;
       const f = n => Math.round(n * 10) / 10;
       const r = 1.1 * g.s;
-      let d = '', m = '';
-      this.o.log.forEach(tr => {
-        let pen = false;
-        tr.pts.forEach(([x, y, mx]) => {
-          if (Math.abs(mx - mu) > 0.13 || x > X_MAX || x < X_MIN) { pen = false; return; }
-          const X = f(g.px(x)), Y = f(g.py(y));
-          d += (pen ? 'L' : 'M') + X + ' ' + Y;
-          m += `M${f(X - r)} ${f(Y - r)}l${f(2 * r)} ${f(2 * r)}m0 ${f(-2 * r)}l${f(-2 * r)} ${f(2 * r)}`;
-          pen = true;
+      const { traces = [], target = [] } = this.o.log;
+      const count = traces.reduce((a, tr) => a + tr.length, 0);
+      const every = Math.max(1, Math.ceil(count / 8000));        // x markers thinned out on very long selections
+      const poly = (runs, mark) => {
+        let d = '', m = '', k = 0;
+        runs.forEach(run => {
+          let pen = false;
+          run.forEach(([x, y]) => {
+            if (x > X_MAX || x < X_MIN) { pen = false; return; }
+            const X = f(g.px(x)), Y = f(g.py(y));
+            d += (pen ? 'L' : 'M') + X + ' ' + Y;
+            if (mark && k++ % every === 0) m += `M${f(X - r)} ${f(Y - r)}l${f(2 * r)} ${f(2 * r)}m0 ${f(-2 * r)}l${f(-2 * r)} ${f(2 * r)}`;
+            pen = true;
+          });
         });
-      });
-      this._logKey = key;
-      this._logSvg = `<g class="log" stroke="${C.log}" fill="none" pointer-events="none"><path d="${d}" stroke-width="${0.75 * g.s}" stroke-linejoin="round"/><path d="${m}" stroke-width="${0.6 * g.s}" opacity=".8"/></g>`;
+        return [d, m];
+      };
+      const [d, m] = poly(traces, true), [td] = poly(target, false);
+      this._logKey = key; this._logSrc = this.o.log;
+      this._logSvg = `<g class="log" fill="none" pointer-events="none" clip-path="url(#${this.uid}-plot)">` +
+        `<g stroke="${C.log}"><path d="${d}" stroke-width="${0.75 * g.s}" stroke-linejoin="round"/><path d="${m}" stroke-width="${0.6 * g.s}" opacity=".8"/></g>` +
+        `<path d="${td}" stroke="#fff" stroke-width="${1.25 * g.s}" stroke-dasharray="${1.5 * g.s} ${2.5 * g.s}" stroke-linecap="round" opacity=".85"/></g>`;
       return this._logSvg;
     }
 

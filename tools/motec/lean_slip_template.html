@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lean vs Slip</title>
+<style>
+:root{
+  --bg:#f4f5f7;--surface:#ffffff;--ink:#14171c;--ink2:#4a5260;--muted:#7d8591;
+  --grid:#eceef1;--axis:#c9cdd3;--zero:#b4b9c1;--accent:#2b6cdf;--sel:rgba(43,108,223,.10);
+  --trace:#a3a9b2;--border:#e2e5ea;--chip:#f1f3f6;--dim:rgba(244,245,247,.78);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0e1014;--surface:#161920;--ink:#e7e9ed;--ink2:#a9b0bb;--muted:#717986;
+  --grid:#20242c;--axis:#363c47;--zero:#4a515d;--accent:#6c9cff;--sel:rgba(108,156,255,.14);
+  --trace:#596170;--border:#252a33;--chip:#1e222a;--dim:rgba(14,16,20,.78);
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 32px}
+header h1{font-size:20px;margin:0 0 4px;font-weight:600}
+header .sub{color:var(--ink2);font-size:13px}
+header .sub span+span::before{content:"·";margin:0 8px;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:14px}
+.filters{display:flex;flex-wrap:wrap;gap:20px 36px;align-items:flex-start}
+.fgroup{display:flex;flex-direction:column;gap:8px;min-width:0}
+.fgroup.grow{flex:1 1 360px}
+.flabel{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:flex;justify-content:space-between;gap:12px}
+.flabel b{color:var(--ink);font-weight:600;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--border);background:var(--chip);color:var(--ink2);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;font-variant-numeric:tabular-nums}
+.chip:hover{border-color:var(--axis)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.ghost{background:none}
+.link{background:none;border:0;color:var(--accent);font:inherit;font-size:12px;cursor:pointer;padding:0;text-transform:none;letter-spacing:0}
+/* dual slider */
+.range{position:relative;height:30px;margin:0 9px;touch-action:none}
+.range .track{position:absolute;left:0;right:0;top:9px;height:12px;border-radius:6px}
+.range .dim{position:absolute;top:9px;height:12px;background:var(--dim)}
+.range .dim.l{left:0;border-radius:6px 0 0 6px}
+.range .dim.r{right:0;border-radius:0 6px 6px 0}
+.range .thumb{position:absolute;top:3px;width:18px;height:24px;margin-left:-9px;border-radius:5px;background:var(--surface);border:2px solid var(--ink2);cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.range .thumb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ticks{position:relative;height:16px;margin:0 9px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ticks span{position:absolute;transform:translateX(-50%)}
+.chart-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.chart-head h2{font-size:15px;margin:0;font-weight:600}
+.stat{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.plot{position:relative;margin-top:8px}
+.plot canvas{display:block;width:100%}
+.plot canvas.overlay{position:absolute;left:0;top:0;pointer-events:none}
+#tip{position:fixed;pointer-events:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.18);display:none;z-index:10;font-variant-numeric:tabular-nums;min-width:150px}
+#tip .row{display:flex;justify-content:space-between;gap:14px}
+#tip .k{color:var(--muted)}
+#tip .sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.laps{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip small{opacity:.75;margin-left:6px}
+#timeline{cursor:crosshair;touch-action:none}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="title">Lean angle vs rear slip</h1>
+    <div class="sub" id="sub"></div>
+  </header>
+
+  <div class="card filters">
+    <div class="fgroup">
+      <div class="flabel">Gear <button class="link" id="gearAll">All</button></div>
+      <div class="chips" id="gears"></div>
+    </div>
+    <div class="fgroup grow">
+      <div class="flabel">mu_x_rear range <b id="muRead"></b></div>
+      <div class="range" id="muRange">
+        <div class="track" id="muTrack"></div>
+        <div class="dim l" id="muDimL"></div><div class="dim r" id="muDimR"></div>
+        <div class="thumb" id="muA" tabindex="0" role="slider" aria-label="mu_x minimum"></div>
+        <div class="thumb" id="muB" tabindex="0" role="slider" aria-label="mu_x maximum"></div>
+      </div>
+      <div class="ticks" id="muTicks"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="chart-head">
+      <h2>Rear slip vs lean angle, coloured by mu_x_rear</h2>
+      <div class="stat" id="count"></div>
+    </div>
+    <div class="plot" id="scatterWrap">
+      <canvas id="scatter"></canvas>
+      <canvas id="scatterOv" class="overlay"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="chart-head">
+      <h2>Timeline</h2>
+      <div class="stat" id="selRead"></div>
+    </div>
+    <div class="laps" id="laps"></div>
+    <div class="plot"><canvas id="timeline"></canvas></div>
+    <div class="hint">Click a lap to select it · drag on the trace to select a section · drag the handles to trim · drag inside the selection to move it. Grey trace is v_ref.</div>
+  </div>
+</div>
+<div id="tip"></div>
+
+<script>
+const D = /*__DATA__*/null;
+
+// ---------- data ----------
+const RATE = D.rate, N = D.lean.length, DUR = N / RATE;
+const lean = Float32Array.from(D.lean), slip = Float32Array.from(D.slip),
+      mu = Float32Array.from(D.mu), gear = Int8Array.from(D.gear);
+const vref = Float32Array.from(D.vref), VRATE = D.vrate;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmtLap = s => { const m = Math.floor(s / 60); return m + ':' + (s - m * 60).toFixed(3).padStart(6, '0'); };
+const fmtClock = s => { const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s - m * 60)).padStart(2, '0'); };
+
+// laps from beacon markers
+const bounds = [0, ...D.markers.filter(m => m > 0.5 && m < DUR - 0.5), DUR];
+const laps = [];
+for (let k = 0; k < bounds.length - 1; k++) {
+  const a = bounds[k], b = bounds[k + 1];
+  const nSeg = bounds.length - 1;
+  let name = 'Lap ' + k, full = true;
+  if (nSeg >= 2 && k === 0) { name = 'Out lap'; full = false; }
+  else if (nSeg >= 3 && k === nSeg - 1) { name = 'In lap'; full = false; }
+  laps.push({ a, b, name, full });
+}
+const fullLaps = laps.filter(l => l.full);
+const fastest = fullLaps.length ? fullLaps.reduce((p, l) => (l.b - l.a < p.b - p.a ? l : p)) : null;
+
+// ranges
+function pct(arr, p) { const s = Float32Array.from(arr).sort(); return s[Math.min(s.length - 1, Math.max(0, Math.floor(p * s.length)))]; }
+let leanMax = 0, sMin = Infinity, sMax = -Infinity, muMin = Infinity, muMax = -Infinity;
+for (let i = 0; i < N; i++) {
+  leanMax = Math.max(leanMax, Math.abs(lean[i]));
+  if (slip[i] < sMin) sMin = slip[i]; if (slip[i] > sMax) sMax = slip[i];
+  if (mu[i] < muMin) muMin = mu[i]; if (mu[i] > muMax) muMax = mu[i];
+}
+const X = { min: -Math.ceil(leanMax / 10) * 10, max: Math.ceil(leanMax / 10) * 10 };
+const Y = { min: Math.floor(sMin / 5) * 5, max: Math.ceil(sMax / 5) * 5 };
+const MU = { min: Math.floor(muMin * 10) / 10, max: Math.ceil(muMax * 10) / 10 };
+// colour domain: 0.5..99.5 percentile so outliers don't wash out the scale
+const CD = { min: Math.floor(pct(mu, 0.005) * 10) / 10, max: Math.ceil(pct(mu, 0.995) * 10) / 10 };
+
+// ---------- colour (dark blue -> red heat map) ----------
+const STOPS_LIGHT = [[0, '#0a1a5c'], [0.2, '#1d4fb8'], [0.4, '#2fa3d6'], [0.55, '#7fd0b0'], [0.7, '#f2d23a'], [0.85, '#f08424'], [1, '#c4161c']];
+const STOPS_DARK  = [[0, '#2a3fae'], [0.2, '#2f6fe0'], [0.4, '#36b2e3'], [0.55, '#86d9b6'], [0.7, '#f5d846'], [0.85, '#f38e2e'], [1, '#e0282e']];
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+let LUT = [];
+function buildLut() {
+  const stops = matchMedia('(prefers-color-scheme: dark)').matches ? STOPS_DARK : STOPS_LIGHT;
+  LUT = [];
+  for (let k = 0; k < 64; k++) {
+    const t = k / 63; let j = 0;
+    while (j < stops.length - 2 && t > stops[j + 1][0]) j++;
+    const [t0, c0] = stops[j], [t1, c1] = stops[j + 1];
+    const f = (t - t0) / (t1 - t0), a = hex(c0), b = hex(c1);
+    LUT.push(`rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * f)).join(',')})`);
+  }
+}
+const muBin = m => Math.max(0, Math.min(63, Math.round((m - CD.min) / (CD.max - CD.min) * 63)));
+
+// ---------- state ----------
+const gearsPresent = [...new Set(gear)].sort((a, b) => a - b);
+const state = {
+  t0: fastest ? fastest.a : 0, t1: fastest ? fastest.b : DUR,
+  gears: new Set(gearsPresent), muLo: MU.min, muHi: MU.max, hover: -1
+};
+
+// ---------- header ----------
+(() => {
+  const m = D.meta, bits = [m.Venue, m.Event, m.Session, m.Driver, m['Vehicle Id'], m['Log Date'] && (m['Log Date'] + ' ' + (m['Log Time'] || ''))].filter(Boolean);
+  if (fastest) bits.push('Fastest ' + fmtLap(fastest.b - fastest.a) + ' (' + fastest.name + ')');
+  bits.push(m.File);
+  document.getElementById('sub').innerHTML = bits.map(b => `<span>${String(b).replace(/</g, '&lt;')}</span>`).join('');
+})();
+
+// ---------- canvas helpers ----------
+function fit(cv, h) {
+  const w = cv.parentElement.clientWidth, dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+let raf = 0;
+function schedule() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; drawScatter(); drawTimeline(); updateReadouts(); }); }
+
+// ---------- scatter ----------
+const sc = document.getElementById('scatter'), ov = document.getElementById('scatterOv');
+const SM = { l: 56, r: 16, t: 12, b: 44 };
+let SG = null; // geometry
+const drawnX = new Float32Array(N), drawnY = new Float32Array(N), drawnI = new Int32Array(N);
+let drawnN = 0, inSel = 0;
+
+function drawScatter() {
+  const W = sc.parentElement.clientWidth, H = Math.max(340, Math.min(600, Math.round(W * 0.56)));
+  const { ctx, w, h } = fit(sc, H); fit(ov, H);
+  const pw = w - SM.l - SM.r, ph = h - SM.t - SM.b;
+  const xs = v => SM.l + (v - X.min) / (X.max - X.min) * pw, ys = v => SM.t + (Y.max - v) / (Y.max - Y.min) * ph;
+  SG = { xs, ys, w, h };
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '11px system-ui,sans-serif'; ctx.lineWidth = 1;
+  // grid
+  ctx.fillStyle = css('--muted'); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let v = X.min; v <= X.max; v += 10) {
+    const x = Math.round(xs(v)) + 0.5;
+    ctx.strokeStyle = v === 0 ? css('--zero') : css('--grid');
+    ctx.beginPath(); ctx.moveTo(x, SM.t); ctx.lineTo(x, SM.t + ph); ctx.stroke();
+    ctx.fillText(v + '°', x, SM.t + ph + 6);
+  }
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = Y.min; v <= Y.max; v += 5) {
+    const y = Math.round(ys(v)) + 0.5;
+    ctx.strokeStyle = v === 0 ? css('--zero') : css('--grid');
+    ctx.beginPath(); ctx.moveTo(SM.l, y); ctx.lineTo(SM.l + pw, y); ctx.stroke();
+    ctx.fillText(v + '%', SM.l - 8, y);
+  }
+  ctx.fillStyle = css('--ink2'); ctx.font = '12px system-ui,sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('Lean angle  phi_lean (deg)   ← left · right →', SM.l + pw / 2, h - 2);
+  ctx.save(); ctx.translate(14, SM.t + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textBaseline = 'middle';
+  ctx.fillText('Rear slip (%)', 0, 0); ctx.restore();
+
+  // points: bucket by colour, draw extremes (by |mu|) last so they stay visible
+  const i0 = Math.max(0, Math.ceil(state.t0 * RATE)), i1 = Math.min(N - 1, Math.floor(state.t1 * RATE));
+  const buckets = Array.from({ length: 64 }, () => []);
+  drawnN = 0; inSel = i1 - i0 + 1;
+  for (let i = i0; i <= i1; i++) {
+    const m = mu[i];
+    if (m < state.muLo || m > state.muHi || !state.gears.has(gear[i])) continue;
+    const x = xs(lean[i]), y = ys(slip[i]);
+    drawnX[drawnN] = x; drawnY[drawnN] = y; drawnI[drawnN] = i; drawnN++;
+    buckets[muBin(m)].push(x, y);
+  }
+  const zeroBin = muBin(0);
+  const order = [...Array(64).keys()].sort((a, b) => Math.abs(a - zeroBin) - Math.abs(b - zeroBin));
+  const r = drawnN > 20000 ? 1.25 : 1.6;
+  ctx.globalAlpha = 0.85;
+  for (const k of order) {
+    const b = buckets[k]; if (!b.length) continue;
+    ctx.fillStyle = LUT[k]; ctx.beginPath();
+    for (let j = 0; j < b.length; j += 2) { ctx.moveTo(b[j] + r, b[j + 1]); ctx.arc(b[j], b[j + 1], r, 0, 6.2832); }
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  drawHover();
+}
+
+function drawHover() {
+  const c = ov.getContext('2d'), dpr = window.devicePixelRatio || 1;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, ov.width, ov.height);
+  if (state.hover < 0 || !SG) return;
+  const i = state.hover, x = SG.xs(lean[i]), y = SG.ys(slip[i]);
+  c.lineWidth = 2; c.strokeStyle = css('--surface'); c.beginPath(); c.arc(x, y, 6, 0, 6.2832); c.stroke();
+  c.strokeStyle = css('--ink'); c.lineWidth = 1.5; c.beginPath(); c.arc(x, y, 7.5, 0, 6.2832); c.stroke();
+}
+
+const tip = document.getElementById('tip');
+function lapOf(t) { return laps.find(l => t >= l.a && t < l.b) || laps[laps.length - 1]; }
+sc.parentElement.addEventListener('pointermove', e => {
+  const r = sc.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  let best = -1, bd = 100; // 10px radius
+  for (let k = 0; k < drawnN; k++) {
+    const dx = drawnX[k] - mx, dy = drawnY[k] - my, d = dx * dx + dy * dy;
+    if (d < bd) { bd = d; best = drawnI[k]; }
+  }
+  if (best !== state.hover) { state.hover = best; drawHover(); drawTimeline(); }
+  if (best < 0) { tip.style.display = 'none'; return; }
+  const t = best / RATE, l = lapOf(t), v = vref[Math.min(vref.length - 1, Math.floor(t * VRATE))];
+  const row = (k, val) => `<div class="row"><span class="k">${k}</span><span>${val}</span></div>`;
+  tip.innerHTML =
+    `<div class="row" style="margin-bottom:4px"><b>${t.toFixed(2)} s</b><span class="k">${l.name} +${(t - l.a).toFixed(2)} s</span></div>` +
+    row('Lean', lean[best].toFixed(1) + '°') + row('Slip', slip[best].toFixed(2) + ' %') +
+    row('<span class="sw" style="background:' + LUT[muBin(mu[best])] + '"></span>mu_x', mu[best].toFixed(3)) +
+    row('Gear', gear[best] === 0 ? 'N' : gear[best]) + row('v_ref', v.toFixed(1) + ' km/h');
+  tip.style.display = 'block';
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let tx = e.clientX + 14, ty = e.clientY + 14;
+  if (tx + tw > innerWidth - 8) tx = e.clientX - tw - 14;
+  if (ty + th > innerHeight - 8) ty = e.clientY - th - 14;
+  tip.style.left = tx + 'px'; tip.style.top = ty + 'px';
+});
+sc.parentElement.addEventListener('pointerleave', () => { tip.style.display = 'none'; state.hover = -1; drawHover(); drawTimeline(); });
+
+// ---------- timeline ----------
+const tl = document.getElementById('timeline');
+const TM = { l: 56, r: 16, t: 20, b: 22 };
+let TG = null;
+function drawTimeline() {
+  const { ctx, w, h } = fit(tl, 130);
+  const pw = w - TM.l - TM.r, ph = h - TM.t - TM.b;
+  const tx = t => TM.l + t / DUR * pw;
+  let vmax = 0; for (const v of vref) vmax = Math.max(vmax, v);
+  vmax = Math.ceil(vmax / 50) * 50 || 1;
+  const vy = v => TM.t + ph - v / vmax * ph;
+  TG = { tx, xt: x => Math.max(0, Math.min(DUR, (x - TM.l) / pw * DUR)), pw };
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '11px system-ui,sans-serif';
+  // laps
+  laps.forEach((l, k) => {
+    const a = tx(l.a), b = tx(l.b);
+    if (k % 2) { ctx.fillStyle = css('--grid'); ctx.globalAlpha = .5; ctx.fillRect(a, TM.t, b - a, ph); ctx.globalAlpha = 1; }
+    if (k > 0) { ctx.strokeStyle = css('--axis'); ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(Math.round(a) + .5, TM.t - 4); ctx.lineTo(Math.round(a) + .5, TM.t + ph); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.fillStyle = l === fastest ? css('--ink') : css('--ink2'); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const label = l.full ? `${l.name}  ${fmtLap(l.b - l.a)}` : l.name;
+    if (b - a > ctx.measureText(label).width + 8) ctx.fillText(label, (a + b) / 2, TM.t - 5);
+  });
+  // speed axis
+  ctx.fillStyle = css('--muted'); ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText(vmax + '', TM.l - 8, vy(vmax)); ctx.fillText('0', TM.l - 8, vy(0));
+  ctx.save(); ctx.translate(12, TM.t + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillText('km/h', 0, 0); ctx.restore();
+  // time ticks
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const step = DUR > 1200 ? 120 : 60;
+  for (let t = 0; t <= DUR; t += step) ctx.fillText(fmtClock(t), tx(t), TM.t + ph + 6);
+  // trace (full, muted) then selection (accent)
+  const trace = (t0, t1, color, lw) => {
+    ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.beginPath();
+    const k0 = Math.max(0, Math.floor(t0 * VRATE)), k1 = Math.min(vref.length - 1, Math.ceil(t1 * VRATE));
+    const stride = Math.max(1, Math.floor((k1 - k0) / (pw * 2 * (t1 - t0) / DUR)));
+    for (let k = k0; k <= k1; k += stride) { const x = tx(k / VRATE), y = vy(vref[k]); k === k0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+    ctx.stroke();
+  };
+  trace(0, DUR, css('--trace'), 1);
+  const a = tx(state.t0), b = tx(state.t1);
+  ctx.fillStyle = css('--sel'); ctx.fillRect(a, TM.t, b - a, ph);
+  trace(state.t0, state.t1, css('--accent'), 1.5);
+  // handles
+  for (const x of [a, b]) {
+    ctx.fillStyle = css('--accent'); ctx.fillRect(Math.round(x) - 1, TM.t, 2, ph);
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x - 4, TM.t + ph / 2 - 12, 8, 24, 3) : ctx.rect(x - 4, TM.t + ph / 2 - 12, 8, 24); ctx.fill();
+  }
+  // hover cursor from scatter
+  if (state.hover >= 0) {
+    const x = Math.round(tx(state.hover / RATE)) + .5;
+    ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, TM.t); ctx.lineTo(x, TM.t + ph); ctx.stroke();
+  }
+}
+
+let drag = null;
+function setSel(a, b) {
+  if (a > b) [a, b] = [b, a];
+  state.t0 = Math.max(0, a); state.t1 = Math.min(DUR, b); schedule();
+}
+tl.addEventListener('pointerdown', e => {
+  if (!TG) return;
+  const x = e.offsetX, t = TG.xt(x), xa = TG.tx(state.t0), xb = TG.tx(state.t1);
+  if (Math.abs(x - xa) <= 8) drag = { mode: 'edge', fixed: state.t1 };
+  else if (Math.abs(x - xb) <= 8) drag = { mode: 'edge', fixed: state.t0 };
+  else if (x > xa && x < xb) drag = { mode: 'move', off: t - state.t0, len: state.t1 - state.t0, x0: x };
+  else drag = { mode: 'new', fixed: t, x0: x };
+  tl.setPointerCapture(e.pointerId);
+});
+tl.addEventListener('pointermove', e => {
+  if (!TG) return;
+  const x = e.offsetX, t = TG.xt(x);
+  if (!drag) {
+    const xa = TG.tx(state.t0), xb = TG.tx(state.t1);
+    tl.style.cursor = (Math.abs(x - xa) <= 8 || Math.abs(x - xb) <= 8) ? 'ew-resize' : (x > xa && x < xb ? 'grab' : 'crosshair');
+    return;
+  }
+  if (drag.mode === 'edge') setSel(drag.fixed, t);
+  else if (drag.mode === 'move') {
+    let a = t - drag.off; a = Math.max(0, Math.min(DUR - drag.len, a)); drag.moved = drag.moved || Math.abs(x - drag.x0) > 3;
+    if (drag.moved) setSel(a, a + drag.len);
+  } else if (Math.abs(x - drag.x0) > 3) { drag.moved = true; setSel(drag.fixed, t); }
+});
+tl.addEventListener('pointerup', e => {
+  if (drag && (drag.mode === 'new' || drag.mode === 'move') && !drag.moved) { const l = lapOf(TG.xt(e.offsetX)); setSel(l.a, l.b); }
+  else if (state.t1 - state.t0 < 0.1) setSel(state.t0, state.t0 + 0.1);
+  drag = null;
+});
+
+// lap buttons
+const lapsEl = document.getElementById('laps');
+function renderLaps() {
+  const opts = [{ name: 'Whole session', a: 0, b: DUR }, ...laps];
+  lapsEl.innerHTML = '';
+  opts.forEach(l => {
+    const b = document.createElement('button');
+    const on = Math.abs(l.a - state.t0) < 1e-3 && Math.abs(l.b - state.t1) < 1e-3;
+    b.className = 'chip' + (on ? ' on' : '');
+    b.innerHTML = l.name + (l.full ? `<small>${fmtLap(l.b - l.a)}${l === fastest ? ' ★' : ''}</small>` : '');
+    b.onclick = () => setSel(l.a, l.b);
+    lapsEl.appendChild(b);
+  });
+}
+
+// ---------- gear filter ----------
+const gearsEl = document.getElementById('gears');
+function renderGears() {
+  gearsEl.innerHTML = '';
+  gearsPresent.forEach(g => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (state.gears.has(g) ? ' on' : '');
+    b.textContent = g === 0 ? 'N' : g;
+    b.title = 'Click to toggle · double-click for this gear only';
+    b.setAttribute('aria-pressed', state.gears.has(g));
+    b.onclick = () => { state.gears.has(g) ? state.gears.delete(g) : state.gears.add(g); renderGears(); schedule(); };
+    b.ondblclick = () => { state.gears = new Set([g]); renderGears(); schedule(); };
+    gearsEl.appendChild(b);
+  });
+}
+document.getElementById('gearAll').onclick = () => { state.gears = new Set(gearsPresent); renderGears(); schedule(); };
+
+// ---------- mu_x dual slider (track doubles as the colour legend) ----------
+const muRange = document.getElementById('muRange'), muA = document.getElementById('muA'), muB = document.getElementById('muB');
+const muToPct = v => (v - MU.min) / (MU.max - MU.min) * 100;
+function paintMuTrack() {
+  const stopsCss = [];
+  for (let k = 0; k <= 40; k++) { const v = MU.min + (MU.max - MU.min) * k / 40; stopsCss.push(`${LUT[muBin(v)]} ${k * 2.5}%`); }
+  document.getElementById('muTrack').style.background = `linear-gradient(90deg,${stopsCss.join(',')})`;
+  const ticks = document.getElementById('muTicks'); ticks.innerHTML = '';
+  const step = (MU.max - MU.min) > 2 ? 0.5 : 0.25;
+  for (let v = Math.ceil(MU.min / step) * step; v <= MU.max + 1e-9; v += step)
+    ticks.insertAdjacentHTML('beforeend', `<span style="left:${muToPct(v)}%">${(+v.toFixed(2))}</span>`);
+}
+function placeMu() {
+  const a = muToPct(state.muLo), b = muToPct(state.muHi);
+  muA.style.left = a + '%'; muB.style.left = b + '%';
+  document.getElementById('muDimL').style.width = a + '%';
+  document.getElementById('muDimR').style.width = (100 - b) + '%';
+  muA.setAttribute('aria-valuenow', state.muLo.toFixed(2)); muB.setAttribute('aria-valuenow', state.muHi.toFixed(2));
+  const all = state.muLo <= MU.min && state.muHi >= MU.max;
+  document.getElementById('muRead').innerHTML = (all ? 'all' : `${state.muLo.toFixed(2)} … ${state.muHi.toFixed(2)}`) +
+    (all ? '' : ' <button class="link" id="muReset">reset</button>');
+  const rs = document.getElementById('muReset'); if (rs) rs.onclick = () => { state.muLo = MU.min; state.muHi = MU.max; placeMu(); schedule(); };
+}
+function setMu(which, v) {
+  v = Math.round(Math.max(MU.min, Math.min(MU.max, v)) * 100) / 100;
+  if (which === 'a') state.muLo = Math.min(v, state.muHi); else state.muHi = Math.max(v, state.muLo);
+  placeMu(); schedule();
+}
+let muDrag = null;
+function muFromX(clientX) { const r = muRange.getBoundingClientRect(); return MU.min + (clientX - r.left) / r.width * (MU.max - MU.min); }
+muRange.addEventListener('pointerdown', e => {
+  const v = muFromX(e.clientX);
+  muDrag = e.target === muA ? 'a' : e.target === muB ? 'b' : (Math.abs(v - state.muLo) <= Math.abs(v - state.muHi) ? 'a' : 'b');
+  muRange.setPointerCapture(e.pointerId); setMu(muDrag, v);
+});
+muRange.addEventListener('pointermove', e => { if (muDrag) setMu(muDrag, muFromX(e.clientX)); });
+muRange.addEventListener('pointerup', () => { muDrag = null; });
+for (const [el, w] of [[muA, 'a'], [muB, 'b']]) el.addEventListener('keydown', e => {
+  const d = (e.shiftKey ? 0.1 : 0.01) * (e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0);
+  if (d) { e.preventDefault(); setMu(w, (w === 'a' ? state.muLo : state.muHi) + d); }
+});
+
+// ---------- readouts ----------
+function updateReadouts() {
+  const l = laps.find(l => state.t0 >= l.a - 1e-3 && state.t1 <= l.b + 1e-3);
+  const where = l ? ` · ${l.name}${Math.abs(l.a - state.t0) < 1e-3 && Math.abs(l.b - state.t1) < 1e-3 ? '' : ' +' + (state.t0 - l.a).toFixed(2) + '…+' + (state.t1 - l.a).toFixed(2) + ' s'}` : '';
+  document.getElementById('selRead').textContent = `${state.t0.toFixed(2)} – ${state.t1.toFixed(2)} s (${(state.t1 - state.t0).toFixed(2)} s)${where}`;
+  document.getElementById('count').textContent = `${drawnN.toLocaleString()} of ${inSel.toLocaleString()} samples shown @ ${RATE} Hz`;
+  renderLaps();
+}
+
+// ---------- init ----------
+function all() { buildLut(); paintMuTrack(); placeMu(); renderGears(); schedule(); }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', all);
+addEventListener('resize', schedule);
+all();
+</script>
+</body>
+</html>
