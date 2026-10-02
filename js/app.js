@@ -554,13 +554,31 @@
   }
   const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   let histTimer = null;
+  // Versions on a timeline, newest on top. Each change = the version right after it; clicking one goes back
+  // (or forward again) to it. Undone changes stay listed above the current version (faded) until a new edit.
   function renderHistory() {
-    const items = undo.slice().reverse();
-    $('histList').innerHTML = items.length
-      ? items.map(e => `<li><div class="h-main"><span class="h-label">${esc(e.label)}</span><span class="h-time">${ago(e.time)}</span></div>` +
-          (e.desc ? `<div class="h-desc">${esc(e.desc)}</div>` : '') + '</li>').join('')
-      : '<li class="h-empty">No changes yet</li>';
+    if (!undo.length && !redo.length) { $('histList').innerHTML = '<li class="h-empty">No changes yet</li>'; return; }
+    const li = (e, k, cls) => `<li class="h-item ${cls}" data-k="${k}" tabindex="0" role="button"` +
+      ` aria-label="${esc(cls === 'is-current' ? 'Current version' : 'Go to this version')}: ${esc(e.label)}${e.desc ? ', ' + esc(e.desc) : ''}">` +
+      `<div class="h-main"><span class="h-label">${esc(e.label)}</span>${cls === 'is-current' ? '<span class="h-now">Current</span>' : ''}<span class="h-time">${ago(e.time)}</span></div>` +
+      (e.desc ? `<div class="h-desc">${esc(e.desc)}</div>` : '') + '</li>';
+    const future = redo.map((e, j) => li(e, 'r' + j, 'is-future'));                       // redo[0] = farthest ahead
+    const past = undo.map((e, i) => li(e, 'u' + i, i === undo.length - 1 ? 'is-current' : '')).reverse();
+    const orig = `<li class="h-item h-orig${undo.length ? '' : ' is-current'}" data-k="o" tabindex="0" role="button" aria-label="Original version">` +
+      `<div class="h-main"><span class="h-label">Original version</span>${undo.length ? '' : '<span class="h-now">Current</span>'}</div>` +
+      '<div class="h-desc">As loaded, before any change</div></li>';
+    $('histList').innerHTML = future.join('') + past.join('') + orig;
   }
+  function goToVersion(k) {
+    if (k[0] === 'r') { for (let n = redo.length - +k.slice(1); n > 0; n--) doUndo(redo, undo); }
+    else { const keep = k === 'o' ? 0 : +k.slice(1) + 1; while (undo.length > keep) doUndo(undo, redo); }
+    renderHistory();
+  }
+  $('histList').addEventListener('click', e => { const it = e.target.closest('.h-item'); if (it && !it.classList.contains('is-current')) goToVersion(it.dataset.k); });
+  $('histList').addEventListener('keydown', e => {
+    const it = e.target.closest('.h-item');
+    if (it && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); if (!it.classList.contains('is-current')) goToVersion(it.dataset.k); }
+  });
   function setHistory(open) {
     $('history').classList.toggle('is-open', open);
     $('history').setAttribute('aria-hidden', !open);
@@ -624,8 +642,8 @@
       sync();
       return cells.length;
     },
-    // selecting a cell only picks the map for the "Edit Map" button; the right side stays as it is
-    onActive() { syncEditBtn(); renderChart(); },
+    // selecting a cell shows its map on the right: Riding modes -> that mode, Gears -> that gear, maps -> that map
+    onActive(r, c) { followCell(r, c); state.noSel = false; state.picker = false; sync(); },
     // Mode name -> Modes tab with that mode; gear header -> Gears tab with that gear.
     onRowHeader(r) {
       state.tab = 'modes'; state.picker = false;
@@ -654,12 +672,8 @@
   });
 
   // The allocation table keeps its own selection (none at start), independent of the right side.
-  function syncSide() { allocGrid.render(); syncEditBtn(); }
+  function syncSide() { allocGrid.render(); }
   const editId = () => (allocGrid.none ? null : D.allocation[MODES[allocGrid.a.r]][allocGrid.a.c]);
-  function syncEditBtn() {                // Edit Map N: only with a cell selected
-    $('editMapBtn').hidden = editId() == null;
-    if (editId() != null) $('editMapTxt').textContent = `Edit Map ${editId()}`;
-  }
   // hovering an allocation cell thickens its map on the graph, like the selected cell
   state.hoverMap = null;
   const setHoverMap = id => { if (state.hoverMap !== id) { state.hoverMap = id; renderChart(); } };
@@ -712,7 +726,6 @@
     const h = br.bottom - 16 - (cr.top + body.scrollTop) - reserve;
     document.documentElement.style.setProperty('--editor-chart-h', Math.max(260, Math.round(h)) + 'px');
   }
-  $('editMapBtn').onclick = openEditor;
   $('editorClose').onclick = closeEditor;
   $('editor').addEventListener('mousedown', e => { if (e.target === $('editor')) closeEditor(); });   // click on the backdrop
   document.addEventListener('keydown', e => {
