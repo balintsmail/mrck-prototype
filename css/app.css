@@ -507,3 +507,4 @@ body.no-scroll { overflow: hidden; }
 .chart-legend svg { height: 14px; width: auto; color: var(--lc, #3f8ce8); fill: none; }
 .chart-legend svg circle { fill: #fff; }
 #log[hidden], #exportMrck[hidden] { display: none; }
+.slip-chart:focus, .slip-chart:focus-visible, .chart:focus { outline: none; }   /* no focus frame around the graph; target points show their own focus */

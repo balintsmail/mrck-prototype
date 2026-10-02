@@ -865,6 +865,8 @@
   window.addEventListener('resize', fitMain);
 
   function sync() {
+    // a different map starts on its μ 1.00 level
+    if (state.targetIndex !== state.lastTarget) { state.muIndex = D.MU_BASE; state.lastTarget = state.targetIndex; }
     requestAnimationFrame(fitMain);
     const modes = state.tab === 'modes', gears = state.tab === 'gears';
     const alloc = D.allocation[state.vmode];

@@ -188,7 +188,8 @@
         if (!this.o.muHidden && !this.o.noActive) this.o.muRows.forEach((m, i) => {
           if (i === mi) return;
           list.unshift({ key: 'mu' + i, mu: i, lean: t.lean, vals: t.rows[i], color: active.color,
-            dotted: true, tip: muTip(m, i), locked: isLocked(i) });
+            dotted: true, tip: muTip(m, i), locked: isLocked(i),
+            label: m === 1 ? fmtMu(m) : undefined });   // μ 1.00 stays labelled (clickable) while another level is selected
         });
       }
       Object.assign(active, { lean: t.lean, vals: this.o.activeVals || t.rows[mi], gradient: true });   // activeVals: read-only stand-in (e.g. a selected +- level)
