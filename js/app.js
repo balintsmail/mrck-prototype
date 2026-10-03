@@ -1117,6 +1117,16 @@
   }
 
   // Label above the graph: what it shows — the maps of a riding mode / gear / all maps, or the selected map.
+  // Legend entries hide / show their data type on the graph (click again to show it); applies to every view.
+  state.hide = new Set();
+  document.querySelectorAll('.chart-legends [data-k]').forEach(el => {
+    el.setAttribute('role', 'button'); el.tabIndex = 0;
+    el.title = 'Click to hide / show';
+    const toggle = () => { const k = el.dataset.k; state.hide.has(k) ? state.hide.delete(k) : state.hide.add(k); renderChart(); };
+    el.addEventListener('click', toggle);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  });
+
   function syncChartTitle(self) {
     const tab = state.tab, el = $('chartTitle');
     el.hidden = tab === 'settings' || state.picker;
@@ -1161,8 +1171,9 @@
       series: state.tab === 'gears' ? gearSeries() : null,
       editable: !user && !na,       // the user offset preview is read-only; nothing to edit without a selection
       noActive: na,
-      rowsHidden: user || na || (maps && !state.showMu),
-      muHidden: maps && !state.showMu,
+      rowsHidden: user || na || (maps && !state.showMu) || state.hide.has('mu'),
+      muHidden: (maps && !state.showMu) || state.hide.has('mu'),
+      hide: Object.fromEntries([...state.hide].map(k => [k, true])),   // legend toggles (points, active, logSlip, logTgt, accel)
       activeColor: maps ? mapColor(D.targets[state.targetIndex].id) : lvlSel ? shiftColor(state.shiftLvl) : null,   // selected map keeps its own colour
       activeLabel: lvlSel ? lvl(state.shiftLvl) : null,
       activeVals: lvlSel ? shiftVals(STEPS.indexOf(state.shiftLvl)) : null,   // +- Buttons: the selected level is the bold line
@@ -1175,6 +1186,11 @@
       overlays: user ? shiftOverlays() : maps && !state.editor ? allMapsOverlays() : [],   // other maps in the background; the editor overlay shows only the edited map
     });
     $('logLegend').hidden = !logView.show;           // logged data legend in the title row, while the data is shown
+    document.querySelectorAll('.chart-legends [data-k]').forEach(el => {   // hidden data types: faded, struck through
+      const off = state.hide.has(el.dataset.k);
+      el.classList.toggle('is-off', off);
+      el.setAttribute('aria-pressed', !off);
+    });
     // legend swatches in the selected line's colour
     $('chartLegend').style.setProperty('--lc', chart.curves && chart.curves.active ? chart.curves.active.color : '#3f8ce8');
   }

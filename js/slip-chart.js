@@ -308,7 +308,8 @@
           bot.map(([x, y]) => `L${f(g.px(x))} ${f(g.py(y))}`).join('') + 'Z';
         out.push(`<path d="${d}" fill="${active.color}" fill-opacity="${this.o.muBand ? '.2' : '.1'}" ${fx('active')} pointer-events="none"/>`);   // μ filtered: 20 %
       }
-      if (!na && !this.o.noGlow) out.push(gradient(active, 'active'));
+      const H = this.o.hide || {};   // data types hidden from the legend: points, active (the bold line), …
+      if (!na && !this.o.noGlow && !H.active) out.push(gradient(active, 'active'));
 
       // Other curves (thin); the hovered one is emphasised
       list.forEach(c => {
@@ -328,7 +329,7 @@
       if (!na) {
       // Active curve
       const vals = active.vals;
-      out.push(`<path d="${line(t.lean, vals)}" stroke="${ac}" stroke-width="${3.5 * s}" stroke-linejoin="round" stroke-linecap="round" fill="none" ${fx('active')} pointer-events="none"/>`);
+      if (!H.active) out.push(`<path d="${line(t.lean, vals)}" stroke="${ac}" stroke-width="${3.5 * s}" stroke-linejoin="round" stroke-linecap="round" fill="none" ${fx('active')} pointer-events="none"/>`);
 
       // Crosshair for hovered / dragged point
       const dash = `${3 * s} ${3 * s}`;
@@ -345,7 +346,7 @@
 
       // Points + value labels
       out.push(`<g ${fx('active')}>`);
-      vals.forEach((v, i) => {
+      if (!H.points) vals.forEach((v, i) => {
         const cx = g.px(t.lean[i]), cy = g.py(v);
         const r = (prev.big.includes(i) ? 8 : 5) * s;
         const ly = cy - 22 * s < g.y0 - 14 * s ? cy + 22 * s : cy - 22 * s;
@@ -438,7 +439,8 @@
     // Imported MoTeC log (filtered by the app, see log-panel.js): o.log = { traces, target }, each a list of
     // [[|lean|, slip %], ...] runs. Logged slip: thin grey line with x markers; ECU slip target: dotted white line.
     _logPath(g) {
-      const key = [g.W, g.H, g.yMax].join('|');
+      const H = this.o.hide || {};       // legend toggles: logSlip, logTgt, accel
+      const key = [g.W, g.H, g.yMax, H.logSlip, H.logTgt, H.accel].join('|');
       if (this._logKey === key && this._logSrc === this.o.log) return this._logSvg;
       const f = n => Math.round(n * 10) / 10;
       const r = 1.1 * g.s;
@@ -459,7 +461,7 @@
         });
         return [d, m];
       };
-      const [d, m] = poly(traces, true), [td] = poly(target, false);
+      const [d, m] = H.logSlip ? ['', ''] : poly(traces, true), [td] = H.logTgt ? [''] : poly(target, false);
       this._logKey = key; this._logSrc = this.o.log;
       this._logSvg = `<g class="log" fill="none" pointer-events="none" clip-path="url(#${this.uid}-plot)">` +
         `<g stroke="${C.log}"><path d="${d}" stroke-width="${0.75 * g.s}" stroke-linejoin="round"/><path d="${m}" stroke-width="${0.6 * g.s}" opacity=".8"/></g>` +
@@ -471,9 +473,9 @@
     // Acceleration vs slip (log-panel.js accelProfile): the 70°..60° strip of the lean axis is a 0..2 G scale
     // (0 G at 70°, 1 G at 65°, 2 G at 60°), slip on the y axis as usual. Blue line, dotted 1 G / 2 G lines, the peak
     // marked and written next to it, and a second x axis row with the G values.
-    _accelOn() { return !!(this.o.showLog && this.o.log && this.o.log.accel); }
+    _accelOn() { return !!(this.o.showLog && this.o.log && this.o.log.accel && !(this.o.hide || {}).accel); }
     _accelSvg(g) {
-      const a = this.o.log && this.o.log.accel;
+      const a = this._accelOn() && this.o.log.accel;
       if (!a) return '';
       const f = n => Math.round(n * 10) / 10, s = g.s;
       const gx = v => g.px(X_MAX - Math.min(ACC_G_MAX, v) * ACC_DEG_PER_G);
@@ -500,7 +502,7 @@
     _hit(px, py) {
       const g = this.g, s = g.s, t = this.target, vals = this.vals, smooth = !!t.smooth;
       // Read-only charts skip the editing targets but still report curves (tooltips / selection).
-      if (this.o.editable) {
+      if (this.o.editable && !(this.o.hide || {}).points) {   // hidden points cannot be dragged
       if (this.delPos && Math.hypot(px - this.delPos[0], py - this.delPos[1]) < 11 * s)
         return { type: 'del', i: this.sel };
 

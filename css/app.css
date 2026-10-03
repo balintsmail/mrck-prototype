@@ -621,7 +621,7 @@ body.no-scroll { overflow: hidden; }
 .lp-side { margin-top: 18px; }
 .lp-side[hidden] { display: none; }
 .lp-side > .side-h { margin-top: 0; }
-.lp-side .switch { margin-left: -4px; }
+.lp-side .switch { margin-left: 0; }   /* the left column clips overflow: no negative margin, or the switch pill gets cut */
 .lp-side .lp-info { color: var(--muted); font-size: 11px; font-weight: 600; margin: 2px 0 4px; }
 .lp-sub { display: flex; align-items: center; gap: 4px 10px; margin-top: 10px; }
 .lp-sub .side-sub { margin: 0; min-width: 44px; }
@@ -701,3 +701,9 @@ body.no-scroll { overflow: hidden; }
 .lp-side.is-off .lp-smooth { display: none; }
 .lp-smooth-in { width: 100%; margin: 8px 0 0; accent-color: #3f8ce8; }
 .slip-chart .ax-g { font-weight: 700; }   /* G scale row of the acceleration layer */
+/* legend entries are toggles: hidden data types faded and struck through */
+.chart-legends [data-k] { cursor: pointer; user-select: none; border-radius: 3px; transition: opacity .15s; }
+.chart-legends [data-k]:hover { color: var(--text); }
+.chart-legends [data-k]:focus-visible { outline: 2px solid #3f8ce8; outline-offset: 2px; }
+.chart-legends [data-k].is-off { opacity: .4; text-decoration: line-through; }
+.lp-map-src { margin-top: -2px; }

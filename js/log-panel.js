@@ -83,6 +83,7 @@
         <div class="lp-tl-box"><canvas class="lp-tl" aria-label="Timeline: click a lap, drag to select a section, drag the ends to trim"></canvas></div>
         <div class="lp-corner-row">
           <div class="lp-sub"><span class="side-sub">Corners</span><button class="lp-link lp-c-clear" hidden>Show all</button></div>
+          <div class="lp-read lp-map-src"></div>
           <!-- track map from GPS (reference lap): corner segments (braking point to the next one), click to filter; buttons when there is no GPS -->
           <div class="lp-map-box"><svg class="lp-map" role="group" aria-label="Track map: click corners to filter by them"></svg></div>
           <div class="chip-list lp-corners" role="group" aria-label="Corners"></div>
@@ -259,6 +260,8 @@
       // corners
       this.q('.lp-corner-row').hidden = !d.corners.length;
       this.q('.lp-map-box').hidden = !this.track;
+      // the track map and the corner segments are made from the best (fastest) full lap
+      this.q('.lp-map-src').textContent = d.refLap ? `Best lap · ${d.refLap.name} · ${fmtLap(d.refLap.b - d.refLap.a)}` : '';
       this.q('.lp-c-clear').hidden = !f.corners.size;
       this.q('.lp-corners').innerHTML = d.corners.length && !this.track ? `<button class="chip lp-chip" data-c="all" aria-pressed="${!f.corners.size}" style="--mc:${C.accent}">All</button>` +
         d.corners.map(c => `<button class="chip lp-chip" data-c="${c.n}" aria-pressed="${f.corners.has(c.n)}" style="--mc:${C.accent}" title="Corner ${c.n} · ${c.ranges.length} pass${c.ranges.length === 1 ? '' : 'es'} in this log" aria-label="Corner ${c.n}">C${c.n}</button>`).join('') : '';
