@@ -138,7 +138,7 @@ kbd { font: inherit; font-weight: 700; color: var(--text); }
 @media (min-width: 1000px) { .layout { grid-template-columns: auto minmax(0, 1fr); gap: 28px; } }
 .main { min-width: 0; }
 #mainView[hidden], .picker[hidden] { display: none; }
-.side { position: sticky; top: 50px;   /* top: set by fitSide() in app.js, below the sticky tab row */ overflow-x: auto; padding-right: 20px; border-right: 1px solid var(--grid); }
+.side { position: sticky; top: 50px;   /* top: set by fitSide() in app.js, below the sticky tab row */ overflow-x: hidden; padding-right: 8px; scrollbar-gutter: stable;   /* 8px + the 12px scrollbar slot (always reserved) = the same 20px gap, so the vertical scrollbar never squeezes the table */ border-right: 1px solid var(--grid); }
 @media (max-width: 999px) { .side { position: static; border-right: 0; padding-right: 0; padding-bottom: 16px; border-bottom: 1px solid var(--grid); } }
 .side-h { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 10px 0 10px; }
 
@@ -468,7 +468,7 @@ kbd { font: inherit; font-weight: 700; color: var(--text); }
 #shiftTbl thead th[data-hc] { color: var(--lc); cursor: pointer; }
 #shiftTbl thead th.hdr-on { color: var(--lc) !important; background: rgba(255, 255, 255, .07); box-shadow: inset 0 -2px 0 var(--lc); }
 /* left column: fixed 380px */
-@media (min-width: 1000px) { .layout { grid-template-columns: 380px minmax(0, 1fr); } .side { width: 380px; box-sizing: border-box; } }
+@media (min-width: 1000px) { .layout { grid-template-columns: 383px minmax(0, 1fr); } .side { width: 383px; box-sizing: border-box; } }   /* 362px table + 8px padding + 12px scrollbar slot + 1px divider */
 /* page scrollbar: the browser's own one is hidden (no width taken); js/page-scrollbar.js draws one over the content */
 html { scrollbar-width: none; }
 html::-webkit-scrollbar { display: none; }
