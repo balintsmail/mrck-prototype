@@ -696,3 +696,8 @@ body.no-scroll { overflow: hidden; }
 .chart-legends { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 18px; margin-left: auto; }
 .chart-head .chart-legend[hidden] { display: none; }
 .log-legend svg { width: 26px; height: 12px; }
+/* slip smoothing slider (left column, under Show logged data) */
+.lp-smooth { margin-top: 14px; }
+.lp-side.is-off .lp-smooth { display: none; }
+.lp-smooth-in { width: 100%; margin: 8px 0 0; accent-color: #3f8ce8; }
+.slip-chart .ax-g { font-weight: 700; }   /* G scale row of the acceleration layer */

@@ -20,6 +20,26 @@
   });
   const muBin = m => Math.max(0, Math.min(63, Math.round((m - MU_MIN) / (MU_MAX - MU_MIN) * 63)));
   const MU_GRADIENT = `linear-gradient(90deg, ${MU_STOPS.map(([t, c]) => `${c} ${t * 100}%`).join(', ')})`;
+  // Acceleration vs slip (drawn by the graph on its 70°..60° strip, 0..2 G): for each ACC_BIN wide slip band the
+  // ACC_PCT percentile of the positive longitudinal acceleration (accx_veh), so single spikes do not set it; bands with
+  // fewer than ACC_MIN samples are left out; a 3-band moving average smooths it. Peak = the highest point.
+  const ACC_BIN = 0.5, ACC_BINS = 52, ACC_PCT = 0.9, ACC_MIN = 8;
+  function accelProfile(bins) {
+    const raw = bins.map((v, b) => {
+      if (v.length < ACC_MIN) return null;
+      v.sort((a, c) => a - c);
+      return [(b + 0.5) * ACC_BIN, v[Math.min(v.length - 1, Math.floor(ACC_PCT * v.length))]];
+    });
+    const pts = [];
+    raw.forEach((p, b) => {
+      if (!p) return;
+      const near = [raw[b - 1], p, raw[b + 1]].filter(Boolean);
+      pts.push([p[0], near.reduce((a, q) => a + q[1], 0) / near.length]);
+    });
+    if (pts.length < 2) return null;
+    const peak = pts.reduce((a, p) => (p[1] > a[1] ? p : a));
+    return { pts, peak };
+  }
   const fmtLap = s => { const m = Math.floor(s / 60); return m + ':' + (s - m * 60).toFixed(3).padStart(6, '0'); };
   const fmtClock = s => { const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s - m * 60)).padStart(2, '0'); };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -32,6 +52,10 @@
     <div class="side-h">Logged data</div>
     ${sw('show', 'Show logged data', 'Show the imported MoTeC data on the graph')}
     <div class="lp-info"></div>
+    <div class="lp-smooth">
+      <div class="lp-sub"><span class="side-sub">Slip smoothing</span><span class="lp-read lp-smooth-read"></span></div>
+      <input type="range" class="lp-smooth-in" min="1" max="20" step="1" value="1" aria-label="Slip smoothing: samples averaged">
+    </div>
     <div class="lp-side-body">
       <div class="side-h lp-filters-h">Logged data filters</div>
       <div class="lp-filter">
@@ -79,7 +103,7 @@
       this.el = el;
       this.o = Object.assign({ onChange() {}, geom: () => null, muRows: [] }, opts);
       this.d = null;
-      this.f = { show: true, autoGears: true, gears: new Set(GEARS), autoMu: false, muLo: MU_MIN, muHi: MU_MAX, t0: 0, t1: 0, corners: new Set() };
+      this.f = { show: true, autoGears: true, gears: new Set(GEARS), autoMu: false, muLo: MU_MIN, muHi: MU_MAX, t0: 0, t1: 0, corners: new Set(), smooth: 1 };
       this.ctx = { visible: true, gears: GEARS, muBand: [-Infinity, Infinity] };
       el.innerHTML = TEMPLATE;
       this.side = document.createElement('section');
@@ -146,12 +170,26 @@
     }
 
     // ---- filtering ------------------------------------------------------
+    // Slip smoothing: moving average over f.smooth neighbouring samples (centred); 1 = the logged values.
+    _smoothSlip() {
+      const d = this.d, k = this.f.smooth;
+      if (k <= 1) return d.slip;
+      if (this.smoothed && this.smoothed.k === k && this.smoothed.d === d) return this.smoothed.v;
+      const n = d.n, src = d.slip, out = new Float32Array(n), cum = new Float64Array(n + 1);
+      for (let i = 0; i < n; i++) cum[i + 1] = cum[i] + src[i];
+      const back = Math.floor((k - 1) / 2), fwd = k - 1 - back;
+      for (let i = 0; i < n; i++) { const a = Math.max(0, i - back), b = Math.min(n - 1, i + fwd); out[i] = (cum[b + 1] - cum[a]) / (b - a + 1); }
+      this.smoothed = { k, d, v: out };
+      return out;
+    }
+
     _filter() {
       const f = this.f, d = this.d;
-      const key = [f.t0, f.t1, [...f.gears].sort(), f.muLo, f.muHi, [...f.corners].sort()].join('|');
+      const key = [f.t0, f.t1, [...f.gears].sort(), f.muLo, f.muHi, [...f.corners].sort(), f.smooth].join('|');
       if (this.cache === key) return;
       this.cache = key;
-      const { rate, n, lean, slip, mu, gear, tgt, red } = d;
+      const { rate, n, lean, mu, gear, tgt, red, accx } = d;
+      const slip = this._smoothSlip();
       const i0 = clamp(Math.ceil(f.t0 * rate), 0, n), i1 = clamp(Math.floor(f.t1 * rate), 0, n - 1);
       // slider ends are open: everything below / above the slider range is included at the ends
       const lo = f.muLo <= MU_MIN + 1e-9 ? -Infinity : f.muLo, hi = f.muHi >= MU_MAX - 1e-9 ? Infinity : f.muHi;
@@ -164,6 +202,7 @@
         }));
       }
       const traces = [], target = [], reduction = [];
+      const bins = accx ? Array.from({ length: ACC_BINS }, () => []) : null;   // positive acceleration per slip band
       let tr = null, tg = null, rd = null, shown = 0;
       for (let i = i0; i <= i1; i++) {
         const ok = (!inCorner || inCorner[i]) && (!gear || !f.gears.size || f.gears.has(gear[i])) && mu[i] >= lo && mu[i] <= hi;
@@ -171,8 +210,9 @@
         if (ok && slip[i] >= 0) { if (!tr) traces.push(tr = []); tr.push([x, slip[i]]); shown++; } else tr = null;
         if (ok && tgt && tgt[i] <= TGT_MAX) { if (!tg) target.push(tg = []); tg.push([x, tgt[i]]); } else tg = null;
         if (ok && red) { if (!rd) reduction.push(rd = []); rd.push([x, red[i], mu[i]]); } else rd = null;
+        if (bins && ok && slip[i] >= 0 && accx[i] > 0) { const b = Math.floor(slip[i] / ACC_BIN); if (b < ACC_BINS) bins[b].push(accx[i]); }
       }
-      this.sel = { traces, target };
+      this.sel = { traces, target, accel: bins ? accelProfile(bins) : null };
       this.reduction = reduction;
       this.shown = shown;
     }
@@ -208,6 +248,9 @@
       }
       const ends = f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9;
       this.q('.lp-mu-read').textContent = ends ? 'all' : `${f.muLo <= MU_MIN + 1e-9 ? '≤ ' : ''}${f.muLo.toFixed(2)} … ${f.muHi >= MU_MAX - 1e-9 ? '≥ ' : ''}${f.muHi.toFixed(2)}`;
+      const sm = this.q('.lp-smooth-in');
+      if (document.activeElement !== sm) sm.value = f.smooth;
+      this.q('.lp-smooth-read').textContent = f.smooth <= 1 ? 'off' : `${f.smooth} samples · ${Math.round(f.smooth / d.rate * 1000)} ms`;
       // laps
       const same = (a0, b0) => Math.abs(a0 - f.t0) < 1e-3 && Math.abs(b0 - f.t1) < 1e-3;
       const fastest = full.length ? full.reduce((p, l) => (l.b - l.a < p.b - p.a ? l : p)) : null;
@@ -270,6 +313,7 @@
       this.side.addEventListener('click', onClick);
       this.el.addEventListener('click', e => { if (!this.side.contains(e.target)) onClick(e); });   // the side block may be docked inside
 
+      this.q('.lp-smooth-in').addEventListener('input', e => this._set({ smooth: +e.target.value }));   // slip smoothing 1..20 samples
       // μ slider: drag an end, drag the bar between them (moves the range), or press on the track (nearest end jumps there)
       const range = this.q('.lp-range');
       const muAt = x => { const r = range.getBoundingClientRect(); return MU_MIN + (x - r.left) / r.width * (MU_MAX - MU_MIN); };

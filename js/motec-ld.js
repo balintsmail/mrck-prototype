@@ -103,6 +103,7 @@
     d.gear = resample(opt('Gear'));
     d.tgt = resample(opt('slip_tgt'));
     d.vref = resample(opt('v_ref'));
+    d.accx = resample(opt('accx_veh'));            // longitudinal acceleration [G]: the acceleration-vs-slip profile
     d.lat = resample(opt('GPS Latitude'));        // track map (0 = no GPS fix)
     d.lon = resample(opt('GPS Longitude'));
     // DTC torque reduction: its own channel when logged, else requested torque − DTC torque target (never below 0)

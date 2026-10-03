@@ -8,6 +8,7 @@
     grid: '#ffffff',
     text: '#ffffff',
     log: '#545459',
+    accel: '#2a7fe0',              // acceleration-vs-slip layer (logged data)
     danger: '#d73526',
     // Compare mode: one colour per gear (G1..G6); a map takes the colour of the lowest gear using it
     gears: ['#9c1f62', '#d9354b', '#e5a634', '#3fa8a4', '#3f8ce8', '#3346e0'],
@@ -18,6 +19,7 @@
   // Room right of the plot for the labels: one 11px label box as wide as two modes ("D1, D2"), the same on every view,
   // so the plot never moves (labels are kept that short: RN / IN / D1 / D2, gear ranges #1-#4, "RN +2").
   const LABEL_W = 48;
+  const ACC_G_MAX = 2, ACC_DEG_PER_G = 5;   // acceleration layer: 0..2 G drawn over 70°..60° of the lean axis
   const BOX_FS = 11, BOX_H = 17, BOX_PX = 5;   // gear / mode label boxes right of the graph: font, height, side padding [px]
   let uidSeq = 0;
 
@@ -128,7 +130,8 @@
       const s = clamp(W / 600, 0.9, 1.3);
       const lfs = (this.o.compare || this.o.labelChars ? 10 : 9.5) * s;   // labelChars: fixed label room, same plot on every view
       // top: none, so the plot starts level with the table on the left (the top axis label reaches above it)
-      const pad = { l: 40 * s, r: 10 * s + LABEL_W, t: 1, b: 30 * s };   // fixed: same plot on every view
+      // bottom: one more row for the G scale of the acceleration layer while it is shown
+      const pad = { l: 40 * s, r: 10 * s + LABEL_W, t: 1, b: (this._accelOn() ? 40 : 30) * s };   // fixed: same plot on every view
       const g = { W, H, s, x0: pad.l, x1: W - pad.r, y0: pad.t, y1: H - pad.b };
       g.px = x => g.x0 + (X_MAX - x) / (X_MAX - X_MIN) * (g.x1 - g.x0);
       g.yMax = this.yMax || Y_MAX;
@@ -264,7 +267,7 @@
       for (let y = 0; y <= g.yMax; y += g.yStep)
         out.push(`<text class="ax" x="${f(g.x0 - 20 * s)}" y="${f(g.py(y))}" text-anchor="end" dominant-baseline="central" font-size="${axisFs}">${y}%</text>`);
       for (let x = X_MAX; x >= X_MIN; x -= g.xStep)
-        out.push(`<text class="ax" x="${f(g.px(x))}" y="${f(g.y1 + 17 * s)}" text-anchor="middle" dominant-baseline="central" font-size="${axisFs}">${x}°</text>`);
+        out.push(`<text class="ax" x="${f(g.px(x))}" y="${f(g.y1 + (this._accelOn() ? 27 : 17) * s)}" text-anchor="middle" dominant-baseline="central" font-size="${axisFs}">${x}°</text>`);
 
       if (this.o.showLog && this.o.log) out.push(this._logPath(g));
 
@@ -460,8 +463,31 @@
       this._logKey = key; this._logSrc = this.o.log;
       this._logSvg = `<g class="log" fill="none" pointer-events="none" clip-path="url(#${this.uid}-plot)">` +
         `<g stroke="${C.log}"><path d="${d}" stroke-width="${0.75 * g.s}" stroke-linejoin="round"/><path d="${m}" stroke-width="${0.6 * g.s}" opacity=".8"/></g>` +
-        `<path d="${td}" stroke="#fff" stroke-width="${1.25 * g.s}" stroke-dasharray="${1.5 * g.s} ${2.5 * g.s}" stroke-linecap="round" opacity=".85"/></g>`;
+        `<path d="${td}" stroke="#fff" stroke-width="${1.25 * g.s}" stroke-dasharray="${1.5 * g.s} ${2.5 * g.s}" stroke-linecap="round" opacity=".85"/></g>` +
+        this._accelSvg(g);
       return this._logSvg;
+    }
+
+    // Acceleration vs slip (log-panel.js accelProfile): the 70°..60° strip of the lean axis is a 0..2 G scale
+    // (0 G at 70°, 1 G at 65°, 2 G at 60°), slip on the y axis as usual. Blue line, dotted 1 G / 2 G lines, the peak
+    // marked and written next to it, and a second x axis row with the G values.
+    _accelOn() { return !!(this.o.showLog && this.o.log && this.o.log.accel); }
+    _accelSvg(g) {
+      const a = this.o.log && this.o.log.accel;
+      if (!a) return '';
+      const f = n => Math.round(n * 10) / 10, s = g.s;
+      const gx = v => g.px(X_MAX - Math.min(ACC_G_MAX, v) * ACC_DEG_PER_G);
+      const d = a.pts.map(([slip, v], i) => `${i ? 'L' : 'M'}${f(gx(v))} ${f(g.py(slip))}`).join('');
+      const [ps, pv] = a.peak, px = gx(pv), py = g.py(ps);
+      const grid = [1, 2].map(v => `M${f(gx(v))} ${f(g.y0)}V${f(g.y1)}`).join('') + `M${f(g.x0)} ${f(py)}H${f(px)}`;
+      const lbl = [0, 1, 2].map(v => `<text class="ax-g" x="${f(gx(v))}" y="${f(g.y1 + 10 * s)}" text-anchor="middle" dominant-baseline="central" font-size="${8.5 * s}" fill="${C.accel}">${v}G</text>`).join('');
+      return `<g pointer-events="none">` +
+        `<path d="${grid}" fill="none" stroke="${C.accel}" stroke-width="1" stroke-dasharray="1 3" opacity=".8"/>` +
+        `<path d="${d}" fill="none" stroke="${C.accel}" stroke-width="${2.5 * s}" stroke-linejoin="round" stroke-linecap="round"/>` +
+        `<circle cx="${f(px)}" cy="${f(py)}" r="${3.5 * s}" fill="${C.accel}"/>` +
+        `<text x="${f(px + 8 * s)}" y="${f(py - 7 * s)}" font-size="${9.5 * s}" font-weight="700" fill="${C.accel}">${pv.toFixed(2)} G</text>` +
+        `<text x="${f(px + 8 * s)}" y="${f(py + 5 * s)}" font-size="${9.5 * s}" font-weight="700" fill="${C.accel}">@ ${ps.toFixed(1)} %</text>` +
+        lbl + '</g>';
     }
 
     // ---- hit testing ----------------------------------------------------
