@@ -54,7 +54,7 @@
     <div class="lp-info"></div>
     <div class="lp-smooth">
       <div class="lp-sub"><span class="side-sub">Slip smoothing</span><span class="lp-read lp-smooth-read"></span></div>
-      <input type="range" class="lp-smooth-in" min="1" max="20" step="1" value="1" aria-label="Slip smoothing: samples averaged">
+      <input type="range" class="lp-smooth-in" min="1" max="50" step="1" value="1" aria-label="Slip smoothing: samples averaged">
     </div>
     <div class="lp-side-body">
       <div class="side-h lp-filters-h">Logged data filters</div>
@@ -313,7 +313,7 @@
       this.side.addEventListener('click', onClick);
       this.el.addEventListener('click', e => { if (!this.side.contains(e.target)) onClick(e); });   // the side block may be docked inside
 
-      this.q('.lp-smooth-in').addEventListener('input', e => this._set({ smooth: +e.target.value }));   // slip smoothing 1..20 samples
+      this.q('.lp-smooth-in').addEventListener('input', e => this._set({ smooth: +e.target.value }));   // slip smoothing 1..50 samples
       // μ slider: drag an end, drag the bar between them (moves the range), or press on the track (nearest end jumps there)
       const range = this.q('.lp-range');
       const muAt = x => { const r = range.getBoundingClientRect(); return MU_MIN + (x - r.left) / r.width * (MU_MAX - MU_MIN); };
