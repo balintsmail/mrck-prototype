@@ -15,6 +15,8 @@
   const X_MAX = 70, X_MIN = 0, Y_MAX = 20, SLIP_MAX = 25.5;   // axis 0..20 %, grows (whole %) when a value is higher; values up to 25.5 %
   const NS = 'http://www.w3.org/2000/svg';
   const FADE = 0.5;                     // opacity of non-hovered curves while previewing another one
+  const MIN_PAD_R = 14;                 // right of the plot when there are no labels [px, scaled]
+  const BOX_FS = 11, BOX_H = 17, BOX_PX = 5;   // gear / mode label boxes right of the graph: font, height, side padding [px]
   let uidSeq = 0;
 
   const fmtPct = v => (Math.round(v * 10) % 10 === 0 ? Math.round(v) : v.toFixed(1)) + '%';
@@ -123,7 +125,10 @@
       const H = Math.max(240, this.el.clientHeight || W * 0.93);
       const s = clamp(W / 600, 0.9, 1.3);
       const lfs = (this.o.compare || this.o.labelChars ? 10 : 9.5) * s;   // labelChars: fixed label room, same plot on every view
-      const pad = { l: 40 * s, r: Math.max(46 * s, 14 * s + labelChars * lfs * 0.62), t: 26 * s, b: 30 * s };
+      const boxW = this.o.compare ? 10 * s + labelChars * BOX_FS * 0.62 + 2 * BOX_PX + 4 : 0;   // gear / mode label boxes
+      // right: room the labels measured on the last render need (render() sets this.padR); first render: an estimate
+      // top: none, so the plot starts level with the table on the left (the top axis label reaches above it)
+      const pad = { l: 40 * s, r: this.padR ?? Math.max(46 * s, 14 * s + labelChars * lfs * 0.62, boxW), t: 1, b: 30 * s };
       const g = { W, H, s, x0: pad.l, x1: W - pad.r, y0: pad.t, y1: H - pad.b };
       g.px = x => g.x0 + (X_MAX - x) / (X_MAX - X_MIN) * (g.x1 - g.x0);
       g.yMax = this.yMax || Y_MAX;
@@ -184,11 +189,12 @@
         // Draw later series first so the first ones (lower gear numbers) end up on top.
         list.sort((a, b) => b.order - a.order);
         if (!active) active = { key: 'active', color: C.blue, label: 'M' + t.id };
-        // Other mu rows of the edited map: dotted 1px, unlabelled, drawn below the gear curves.
+        // Other mu rows of the edited map, drawn below the gear curves: the editable ones solid with 6px circles at their
+        // target points, the calculated ones dotted (as in the maps view); unlabelled.
         if (!this.o.muHidden && !this.o.noActive) this.o.muRows.forEach((m, i) => {
           if (i === mi) return;
           list.unshift({ key: 'mu' + i, mu: i, lean: t.lean, vals: t.rows[i], color: active.color,
-            dotted: true, tip: muTip(m, i), locked: isLocked(i),
+            dotted: isLocked(i), points: !isLocked(i), tip: muTip(m, i), locked: isLocked(i),
             // μ 1.00 stays labelled (clickable) while another level is selected; with MoTeC data (soloActive) every level is
             label: m === 1 || this.o.soloActive ? fmtMu(m) : undefined });
         });
@@ -360,7 +366,10 @@
       }
 
       // Right-hand labels with collision avoidance
-      const lfs = (this.o.compare ? 10 : 9.5) * s, gap = lfs * 1.15;
+      // Gear / mode labels (Riding modes, Gears): 11px in a rounded box of the line's colour, dark text; the box gets
+      // 10 % darker on hover. Other labels (μ levels, maps, +- levels): coloured text.
+      const lfs = (this.o.compare ? 10 : 9.5) * s, gap = this.o.compare ? BOX_H + 2 : lfs * 1.15;
+      const boxed = l => this.o.compare && (l.active || l.c.target != null);
       const labels = list.filter(c => c.label).map(c => ({ c, y: c.vals.at(-1) })).concat(na ? [] : [{ c: active, y: active.vals.at(-1), active: true }]);
       labels.forEach(l => (l.py = g.py(l.y)));
       labels.sort((a, b) => a.py - b.py);
@@ -372,14 +381,43 @@
       }
       this.labelRects = [];
       labels.forEach(l => {
-        const x = g.x1 + 10 * s, w = l.c.label.length * lfs * 0.62;
+        const x = g.x1 + 10 * s, fade = l.active ? fx('active') : fxa(l.c.key, l.c.labelAlpha ?? 1);
+        if (boxed(l)) {
+          const w = l.c.label.length * BOX_FS * 0.62 + 2 * BOX_PX;          // estimate; set to the measured text below
+          if (!l.active) this.labelRects.push({ key: l.c.key, x0: x, x1: x + w, y0: l.py - BOX_H / 2, y1: l.py + BOX_H / 2 });
+          out.push(`<g class="rl-box${previewKey === l.c.key ? ' is-hover' : ''}" data-lbox="${l.c.key}" ${fade}>` +
+            `<rect x="${f(x)}" y="${f(l.py - BOX_H / 2)}" width="${f(w)}" height="${BOX_H}" rx="4" fill="${l.c.color}"/>` +
+            `<text class="rl" x="${f(x + BOX_PX)}" y="${f(l.py)}" dominant-baseline="central" font-size="${BOX_FS}" fill="${C.bg}">${l.c.label}</text></g>`);
+          return;
+        }
+        const w = l.c.label.length * lfs * 0.62;
         if (!l.active) this.labelRects.push({ key: l.c.key, x0: x - 3 * s, x1: x + w + 3 * s, y0: l.py - gap / 2, y1: l.py + gap / 2 });
-        out.push(`<text class="rl" x="${f(x)}" y="${f(l.py)}" dominant-baseline="central" font-size="${lfs}" fill="${l.c.color}" ${l.active ? fx('active') : fxa(l.c.key, l.c.labelAlpha ?? 1)}` +
+        out.push(`<text class="rl" x="${f(x)}" y="${f(l.py)}" dominant-baseline="central" font-size="${lfs}" fill="${l.c.color}" ${fade}` +
           `${previewKey === l.c.key ? ' text-decoration="underline"' : ''}>${l.c.label}</text>`);
       });
 
       this.svg.innerHTML = out.join('');
       this.svg.classList.toggle('is-dragging', !!this.drag);
+      // label boxes: as wide as their text (measured), also for the hover / click areas
+      this.svg.querySelectorAll('[data-lbox]').forEach(el => {
+        const r = el.querySelector('rect'), w = el.querySelector('text').getComputedTextLength() + 2 * BOX_PX;
+        r.setAttribute('width', f(w));
+        const lr = this.labelRects.find(x => x.key === el.dataset.lbox);
+        if (lr) lr.x1 = lr.x0 + w;
+      });
+      // Plot width follows the labels shown: the widest one ends at the right edge of the chart (the page keeps its
+      // 20px margin beyond it). When labels get wider / narrower (another view, map, μ level), lay out once more.
+      let right = 0;
+      this.svg.querySelectorAll('.rl-box rect').forEach(r => { right = Math.max(right, +r.getAttribute('x') + +r.getAttribute('width')); });
+      this.svg.querySelectorAll('text.rl').forEach(t => { if (!t.closest('.rl-box')) right = Math.max(right, +t.getAttribute('x') + t.getComputedTextLength()); });
+      const padR = Math.max(MIN_PAD_R * s, right ? right - g.x1 : 0);
+      if (Math.abs(padR - (this.padR ?? -1)) > 0.5 && !this._refit) {
+        this.padR = padR;
+        this._refit = true;
+        this.render();
+        this._refit = false;
+        return;
+      }
 
       // Flush styles, then move every element to its new state (CSS transitions, 0.2 s).
       const big = [hi, this.sel].filter(i => i != null);

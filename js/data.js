@@ -88,5 +88,5 @@
     off: SHIFT_STEPS.map(k => +(-k * 0.4).toFixed(1)),
   };
 
-  window.MRCK_DATA = { source: DS ? DS.source : null, MU_ROWS, MU_BASE, targets, VEHICLE_MODES, allocation, settings, SHIFT_STEPS, userShift, log: [] };   // log: MoTeC traces, filled by Import MOTEC data (motec-ld.js)
+  window.MRCK_DATA = { source: DS ? DS.source : null, MU_ROWS, MU_BASE, targets, VEHICLE_MODES, allocation, settings, SHIFT_STEPS, userShift, log: [] };   // log: MoTeC traces, filled by Add MOTEC data (motec-ld.js)
 })();

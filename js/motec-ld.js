@@ -113,8 +113,8 @@
       d.redSource = 'md_req − md_tgt_dtc';
     } else { d.red = null; d.redSource = null; }
     d.laps = findLaps(opt('Running Lap Time'), duration);
-    d.straights = [];
-    d.corners = findCorners(d, opt('s_track'));      // also fills d.straights and d.refLap
+    d.brake = resample(opt('p_brake_fr'));           // segment starts (braking points)
+    d.corners = findCorners(d, opt('s_track'));      // also sets d.refLap
     return d;
   }
 
@@ -142,8 +142,9 @@
 
   // Corners: stretches of |lean| >= 15° that reach 30°, split where the bike changes side (chicanes). They are numbered
   // in track order on the fastest full lap; the corners of the other laps get the number of the reference corner at the
-  // same lap distance (s_track, within 100 m) and on the same side. No full lap: no corners.
-  const C_EDGE = 15, C_PEAK = 30, C_MIN_S = 0.5, C_TOL_M = 100, C_TOL_S = 3;
+  // same lap distance (s_track, within 100 m) and on the same side. Each corner is returned as a segment: braking /
+  // deceleration point, the corner and the straight after it (see below). No full lap: no corners.
+  const C_EDGE = 15, C_PEAK = 30, C_MIN_S = 0.5, C_TOL_M = 100, C_TOL_S = 3, B_ON = 2, S_WIN = 15;
   function findCorners(d, sTrack) {
     const full = d.laps.filter(l => l.full);
     if (!full.length) return [];
@@ -172,9 +173,9 @@
     // a corner matches a reference corner when its apex lies within the reference corner's extent (± tolerance),
     // so long corners match even when the apex moves along the arc
     const refs = corners.filter(c => c.ip / rate >= ref.a && c.ip / rate < ref.b)
-      .map((c, k) => ({ n: k + 1, side: c.side, at0: pos(c.i0 / rate), at1: pos(c.i1 / rate), ranges: [],
-        ref: [c.i0 / rate, (c.i1 + 1) / rate], apex: c.ip / rate }));     // where it is on the reference lap (track map)
+      .map((c, k) => ({ n: k + 1, side: c.side, at0: pos(c.i0 / rate), at1: pos(c.i1 / rate), ranges: [], apex: c.ip / rate }));
     d.refLap = ref;
+    const passes = [];
     corners.forEach(c => {
       const p = pos(c.ip / rate);
       let best = null, bd = Infinity;
@@ -183,28 +184,37 @@
         const dd = Math.abs((r.at0 + r.at1) / 2 - p);
         if (dd < bd) { bd = dd; best = r; }
       });
-      if (best) best.ranges.push([c.i0 / rate, (c.i1 + 1) / rate]);
+      if (best) passes.push({ r: best, i0: c.i0, i1: c.i1, ip: c.ip });
     });
-    // Straights: straight n runs from the end of corner n to the start of the next corner (the last one over the
-    // start / finish line to corner 1), by lap distance. Every sample of every lap whose lap distance falls in one is
-    // part of it (samples before the lap start of the out lap / after the in lap's lap length, i.e. the pit lane, are not).
-    const nRef = refs.length;
-    const spans = refs.map((r, k) => {
-      const nx = refs[(k + 1) % nRef], last = k === nRef - 1;
-      return { from: r.at1, to: last ? nx.at0 + refLen : nx.at0, ref: last ? [[r.ref[1], ref.b], [ref.a, nx.ref[0]]] : [[r.ref[1], nx.ref[0]]] };
+    // Segments: a corner and the straight after it. Each starts where the rider starts to brake (front brake above
+    // B_ON bar) and / or the bike starts to slow down (the speed peak before the corner), whichever comes first,
+    // searched back from the apex to the previous corner's apex (at most S_WIN s); it ends where the next one starts.
+    passes.sort((a, b) => a.ip - b.ip);
+    const v = d.vref, br = d.brake, win = S_WIN * rate;
+    passes.forEach((p, k) => {
+      const lo = Math.max(k ? passes[k - 1].ip : 0, p.ip - win);
+      let start = p.i0;                                  // fallback: where the bike leans in
+      if (v) { let vm = lo; for (let i = lo; i <= p.ip; i++) if (v[i] > v[vm]) vm = i; start = Math.min(start, vm); }
+      if (br) {
+        let i = p.ip;
+        while (i > lo && br[i] < B_ON) i--;              // last braking sample before the apex
+        if (br[i] >= B_ON) { while (i > lo && br[i - 1] >= B_ON) i--; start = Math.min(start, i); }
+      }
+      p.b = start;
     });
-    const runs = spans.map(() => []), open = spans.map(() => null);
-    for (let i = 0; i < n; i++) {
-      const t = i / rate, p = pos(t), ok = p >= 0 && p <= refLen + tol;
-      spans.forEach((s, k) => {
-        const inS = ok && ((p >= s.from && p < s.to) || (s.to > refLen && p < s.to - refLen));
-        if (inS && !open[k]) runs[k].push(open[k] = [t, t + 1 / rate]);
-        else if (inS) open[k][1] = t + 1 / rate;
-        else open[k] = null;
-      });
-    }
-    d.straights = spans.map((s, k) => ({ n: k + 1, ranges: runs[k].filter(([a, b]) => b - a >= 0.3), ref: s.ref }));
-    return refs.map(r => ({ n: r.n, ranges: r.ranges, ref: r.ref, apex: r.apex }));
+    passes.forEach((p, k) => {
+      const nx = passes[k + 1], end = nx ? nx.b : p.i1 + 1;   // the last one in the log ends with its corner
+      p.e = end;
+      p.r.ranges.push([p.b / rate, end / rate]);
+    });
+    // where each segment is on the reference lap (track map); the last one wraps over the line back to the first
+    const inRef = passes.filter(p => p.ip / rate >= ref.a && p.ip / rate < ref.b);
+    inRef.forEach((p, k) => {
+      const a = p.b / rate;
+      p.r.ref = k < inRef.length - 1 ? [[a, inRef[k + 1].b / rate]]
+        : [[a, ref.b], [ref.a, Math.max(ref.a, inRef[0].b / rate)]];
+    });
+    return refs.filter(r => r.ref).map(r => ({ n: r.n, ranges: r.ranges, ref: r.ref, apex: r.apex }));
   }
 
   window.MotecLd = { parse, sessionData };

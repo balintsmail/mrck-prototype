@@ -57,11 +57,10 @@
         <div class="chip-list lp-laps" role="group" aria-label="Laps"></div>
         <div class="lp-sub lp-tl-h"><span class="side-sub">Timeline</span></div>
         <div class="lp-tl-box"><canvas class="lp-tl" aria-label="Timeline: click a lap, drag to select a section, drag the ends to trim"></canvas></div>
-        <div class="lp-read lp-sel-read"></div>
         <div class="lp-corner-row">
-          <div class="lp-sub"><span class="side-sub">Corners &amp; straights</span><button class="lp-link lp-c-clear" hidden>Show all</button></div>
-          <!-- track map from GPS (reference lap): click corners / straights to filter; corner buttons when there is no GPS -->
-          <div class="lp-map-box"><svg class="lp-map" role="group" aria-label="Track map: click corners and straights to filter by them"></svg></div>
+          <div class="lp-sub"><span class="side-sub">Corners</span><button class="lp-link lp-c-clear" hidden>Show all</button></div>
+          <!-- track map from GPS (reference lap): corner segments (braking point to the next one), click to filter; buttons when there is no GPS -->
+          <div class="lp-map-box"><svg class="lp-map" role="group" aria-label="Track map: click corners to filter by them"></svg></div>
           <div class="chip-list lp-corners" role="group" aria-label="Corners"></div>
         </div>
       </section>
@@ -86,7 +85,7 @@
       this.el = el;
       this.o = Object.assign({ onChange() {}, geom: () => null, muRows: [] }, opts);
       this.d = null;
-      this.f = { show: true, autoGears: true, gears: new Set(GEARS), autoMu: false, muLo: MU_MIN, muHi: MU_MAX, t0: 0, t1: 0, corners: new Set(), straights: new Set() };
+      this.f = { show: true, autoGears: true, gears: new Set(GEARS), autoMu: false, muLo: MU_MIN, muHi: MU_MAX, t0: 0, t1: 0, corners: new Set() };
       this.ctx = { visible: true, gears: GEARS, muBand: [-Infinity, Infinity] };
       el.innerHTML = TEMPLATE;
       this.side = document.createElement('section');
@@ -104,7 +103,7 @@
     load(d, name) {
       this.d = d; this.name = name;
       Object.assign(this.f, { show: true, t0: 0, t1: d.duration, autoMu: false, muLo: MU_MIN, muHi: MU_MAX });   // a new log starts on the full μ range
-      this.f.corners.clear(); this.f.straights.clear();
+      this.f.corners.clear();
       this.cache = null;
       this.track = this._buildTrack(d);
       this.update();
@@ -155,7 +154,7 @@
     // ---- filtering ------------------------------------------------------
     _filter() {
       const f = this.f, d = this.d;
-      const key = [f.t0, f.t1, [...f.gears].sort(), f.muLo, f.muHi, [...f.corners].sort(), [...f.straights].sort()].join('|');
+      const key = [f.t0, f.t1, [...f.gears].sort(), f.muLo, f.muHi, [...f.corners].sort()].join('|');
       if (this.cache === key) return;
       this.cache = key;
       const { rate, n, lean, slip, mu, gear, tgt, red } = d;
@@ -163,9 +162,9 @@
       // slider ends are open: everything below / above the slider range is included at the ends
       const lo = f.muLo <= MU_MIN + 1e-9 ? -Infinity : f.muLo, hi = f.muHi >= MU_MAX - 1e-9 ? Infinity : f.muHi;
       let inCorner = null;
-      if (f.corners.size || f.straights.size) {        // selected corners and straights (track map)
+      if (f.corners.size) {        // selected segments (track map)
         inCorner = new Uint8Array(n);
-        const parts = d.corners.filter(c => f.corners.has(c.n)).concat(d.straights.filter(s => f.straights.has(s.n)));
+        const parts = d.corners.filter(c => f.corners.has(c.n));
         parts.forEach(c => c.ranges.forEach(([a, b]) => {
           for (let i = Math.max(0, Math.floor(a * rate)); i < Math.min(n, Math.ceil(b * rate)); i++) inCorner[i] = 1;
         }));
@@ -223,11 +222,9 @@
       // corners
       this.q('.lp-corner-row').hidden = !d.corners.length;
       this.q('.lp-map-box').hidden = !this.track;
-      this.q('.lp-c-clear').hidden = !f.corners.size && !f.straights.size;
+      this.q('.lp-c-clear').hidden = !f.corners.size;
       this.q('.lp-corners').innerHTML = d.corners.length && !this.track ? `<button class="chip lp-chip" data-c="all" aria-pressed="${!f.corners.size}" style="--mc:${C.accent}">All</button>` +
         d.corners.map(c => `<button class="chip lp-chip" data-c="${c.n}" aria-pressed="${f.corners.has(c.n)}" style="--mc:${C.accent}" title="Corner ${c.n} · ${c.ranges.length} pass${c.ranges.length === 1 ? '' : 'es'} in this log" aria-label="Corner ${c.n}">C${c.n}</button>`).join('') : '';
-      const lap = d.laps.find(l => f.t0 >= l.a - 1e-3 && f.t1 <= l.b + 1e-3);
-      this.q('.lp-sel-read').textContent = `${f.t0.toFixed(2)} – ${f.t1.toFixed(2)} s${lap && !same(lap.a, lap.b) ? ` (${lap.name} +${(f.t0 - lap.a).toFixed(1)}…+${(f.t1 - lap.a).toFixed(1)} s)` : ''} · ${this.shown.toLocaleString()} samples`;
     }
 
     _set(patch) { Object.assign(this.f, patch); this.update(); }
@@ -260,19 +257,12 @@
         }
         const l = e.target.closest('.lp-laps .chip');
         if (l) { this._setRange(+l.dataset.a, +l.dataset.b); return; }
-        if (e.target.closest('.lp-c-clear')) { this._set({ corners: new Set(), straights: new Set() }); return; }
+        if (e.target.closest('.lp-c-clear')) { this._set({ corners: new Set() }); return; }
         const cm = e.target.closest('.lp-map [data-c]');                  // a corner on the track map
         if (cm) {
           const corners = new Set(this.f.corners), v = +cm.dataset.c;
           corners.has(v) ? corners.delete(v) : corners.add(v);
           this._set({ corners });
-          return;
-        }
-        const sm = e.target.closest('.lp-map [data-s]');                  // a straight on the track map
-        if (sm) {
-          const straights = new Set(this.f.straights), v = +sm.dataset.s;
-          straights.has(v) ? straights.delete(v) : straights.add(v);
-          this._set({ straights });
           return;
         }
         const c = e.target.closest('.lp-corners .chip');
@@ -360,8 +350,8 @@
     }
 
     // ---- drawing --------------------------------------------------------
-    // Track map: 8px track line, cut (1px gaps) at every corner's start and end; corners are clickable, the selected
-    // ones blue (straights too); nothing coloured by default (no corner filter = all data). Small corner numbers beside the apexes.
+    // Track map: 8px track line in one piece per corner segment (from braking for it to braking for the next corner),
+    // 1px gaps between them; clicked ones blue; nothing coloured by default (no filter = all data). Small corner numbers at the apexes.
     _drawMap() {
       const tr = this.track, svg = this.q('.lp-map'), box = this.q('.lp-map-box');
       if (!tr || !box.clientWidth) return;
@@ -380,24 +370,17 @@
       };
       const out = [`<path d="${line(P)}Z" class="lp-trk"/>`];
       const cuts = [], nums = [];
-      // straights between the corners: selectable like the corners (straight n follows corner n)
-      this.d.straights.filter(s => s.ranges.length).forEach(s => {   // none between corners that run into each other
-        const on = this.f.straights.has(s.n), next = s.n % this.d.corners.length + 1;
-        const d = s.ref.map(([ta, tb]) => { const a = at(ta), b = Math.max(a + 1, at(tb)); return line(P.slice(a, b + 1)); }).join('');
-        out.push(`<g class="lp-c lp-s${on ? ' is-on' : ''}" data-s="${s.n}"><title>Straight ${s.n} → ${next}</title>` +
-          `<path d="${d}" class="lp-c-hit"/><path d="${d}" class="lp-c-line"/></g>`);
-      });
+      // one piece per segment (braking point → corner → straight → next braking point); the last one may wrap over the line
       this.d.corners.forEach(c => {
-        const a = at(c.ref[0]), b = Math.max(a + 1, at(c.ref[1]));
         const on = this.f.corners.has(c.n);
-        out.push(`<g class="lp-c${on ? ' is-on' : ''}" data-c="${c.n}"><title>Corner ${c.n}</title>` +
-          `<path d="${line(P.slice(a, b + 1))}" class="lp-c-hit"/><path d="${line(P.slice(a, b + 1))}" class="lp-c-line"/></g>`);
-        [a, b].forEach(i => {   // 1px gap across the track at the corner's start and end
-          const [nx, ny] = normal(i);
-          cuts.push(`M${f(P[i][0] - nx * 6)} ${f(P[i][1] - ny * 6)}L${f(P[i][0] + nx * 6)} ${f(P[i][1] + ny * 6)}`);
-        });
-        const ap = at(c.apex), [nx, ny] = normal(ap);
-        nums.push(`<text class="lp-c-num${on ? ' is-on' : ''}" data-c="${c.n}" x="${f(P[ap][0] + nx * 12)}" y="${f(P[ap][1] + ny * 12)}" text-anchor="middle" dominant-baseline="central">${c.n}</text>`);
+        const pieces = c.ref.map(([ta, tb]) => { const a = at(ta), b = Math.max(a + 1, at(tb)); return [a, b]; });
+        const d = pieces.map(([a, b]) => line(P.slice(a, b + 1))).join('');
+        out.push(`<g class="lp-c${on ? ' is-on' : ''}" data-c="${c.n}"><title>Corner ${c.n}: from braking for it to braking for the next one</title>` +
+          `<path d="${d}" class="lp-c-hit"/><path d="${d}" class="lp-c-line"/></g>`);
+        const i = pieces[0][0], [nx, ny] = normal(i);   // 1px gap across the track where the segment starts
+        cuts.push(`M${f(P[i][0] - nx * 6)} ${f(P[i][1] - ny * 6)}L${f(P[i][0] + nx * 6)} ${f(P[i][1] + ny * 6)}`);
+        const ap = at(c.apex), [ax, ay] = normal(ap);
+        nums.push(`<text class="lp-c-num${on ? ' is-on' : ''}" data-c="${c.n}" x="${f(P[ap][0] + ax * 12)}" y="${f(P[ap][1] + ay * 12)}" text-anchor="middle" dominant-baseline="central">${c.n}</text>`);
       });
       out.push(`<path d="${cuts.join('')}" class="lp-cut"/>`, ...nums);
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -464,7 +447,7 @@
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
       const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const d = this.d, f = this.f;
-      const x0 = 34, x1 = W - 6, top = 18, bot = H - 20, ph = bot - top - 8;   // left column width; 8px strip for the corners
+      const x0 = 14, x1 = W - 6, top = 18, bot = H - 20, ph = bot - top - 8;   // left column width (room for the handles and the first time label); 8px strip for the corners
       this.tg = { x0, w: x1 - x0 };
       const tx = t => x0 + t / d.duration * (x1 - x0);
       ctx.font = '700 10px "Noto Sans", system-ui, sans-serif';
@@ -485,7 +468,6 @@
       ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = C.muted;
       for (let t = 0; t <= d.duration; t += d.duration > 1200 ? 120 : 60) ctx.fillText(fmtClock(t), tx(t), bot + 5);
       ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      ctx.fillText(d.vref ? 'km/h' : '|lean|', x0 - 8, top + 4);
       const line = (t0, t1, color, w) => {
         const i0 = Math.max(0, Math.floor(t0 * d.rate)), i1 = Math.min(d.n - 1, Math.ceil(t1 * d.rate));
         const stride = Math.max(1, Math.floor((i1 - i0) / ((tx(t1) - tx(t0)) * 2 || 1)));
@@ -494,13 +476,11 @@
         ctx.stroke();
       };
       line(0, d.duration, '#4a4a52', 1);
-      // corners: strip under the trace; selected ones in the accent colour
-      d.corners.forEach(c => c.ranges.forEach(([a, b]) => {
-        ctx.fillStyle = f.corners.has(c.n) ? C.accent : 'rgba(255,255,255,.18)';
+      // selected segments (track map): strip under the trace in the accent colour
+      d.corners.filter(c => f.corners.has(c.n)).forEach(c => c.ranges.forEach(([a, b]) => {
+        ctx.fillStyle = C.accent;
         ctx.fillRect(tx(a), bot - 5, Math.max(1, tx(b) - tx(a)), 4);
       }));
-      ctx.fillStyle = C.accent;                    // selected straights in the same strip
-      d.straights.filter(s => f.straights.has(s.n)).forEach(s => s.ranges.forEach(([a, b]) => ctx.fillRect(tx(a), bot - 5, Math.max(1, tx(b) - tx(a)), 4)));
       // selection
       const a = tx(f.t0), b = tx(f.t1);
       ctx.fillStyle = C.sel; ctx.fillRect(a, top, b - a, bot - top);

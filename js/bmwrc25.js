@@ -88,5 +88,50 @@
     return xml;
   }
 
-  window.Bmwrc25 = { exportBmwrc25, x25 };
+  // Import: read the traction-control settings of an M Race Calibration file (same maps as tools/bmwrc25-to-js.pl).
+  // Slip target maps come back with a descending lean axis (70 -> 0, as the prototype shows it); the points above
+  // 70° (the ECU's padding, see ecuTarget in app.js) are dropped. Allocation / user shift use sector 1.
+  //   -> { desc, date, muRows, targets: [{ id, lean, rows }], allocation, userShift, reduction, dtcMode, notes }
+  function importBmwrc25(xml) {
+    if (!/<map name="slip_target_1">/.test(xml)) throw new Error('This is not an M Race Calibration file with traction control maps (no slip_target_1)');
+    const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+    const mapOf = name => {
+      const b = mapBlock(xml, name);
+      const y = b.body.match(/<suppoints_y[^>]*>([^<]*)</);
+      return { x: b.x, y: y ? y[1].split(',').map(Number) : [], rows: b.rows };
+    };
+    const notes = [];
+    let muRows = null;
+    const targets = [];
+    for (let id = 1; xml.includes(`<map name="slip_target_${id}">`); id++) {
+      const m = mapOf(`slip_target_${id}`);
+      if (!muRows) muRows = m.y.map(r2);
+      const keep = m.x.map((x, j) => j).filter(j => m.x[j] <= 70 + 1e-6);     // ascending in the file
+      const dropped = m.x.length - keep.length;
+      if (dropped && m.rows.some(row => keep.length && row.slice(keep.at(-1) + 1).some(v => r1(v) !== r1(row[keep.at(-1)]))))
+        notes.push(`Map ${id}: points above 70° with their own values were dropped`);
+      targets.push({ id, lean: keep.map(j => r1(m.x[j])).reverse(), rows: m.rows.map(row => keep.map(j => r1(row[j])).reverse()) });
+    }
+    const allocation = {};
+    [['Rain', 'rain'], ['Int', 'int'], ['Dry1', 'dry1'], ['Dry2', 'dry2']].forEach(([mode, key]) => {
+      const m = mapOf(`slip_target_alloc_${key}`);
+      allocation[mode] = m.rows.map((row, g) => {
+        if (row.some(v => v !== row[0])) notes.push(`${mode} gear ${g + 1}: the map differs per sector, sector 1 used`);
+        return row[0];
+      });
+    });
+    const fak = mapOf('slip_shift_fak'), ofs = mapOf('slip_shift_ofst');
+    const fac = fak.rows[0].map(r2), off = ofs.rows[0].map(r1);
+    const mid = Math.floor(fac.length / 2);                                  // user level 0
+    const userShift = { facStep: r3(fac[mid] - fac[mid + 1]), offStep: r2(off[mid] - off[mid + 1]), fac, off };
+    const red = xml.match(/<characteristic name="torque_reduction_method">[\s\S]*?<value>([^<]*)<\/value>/);
+    const tcm = mapOf('traction_control_mode');
+    const dtcMode = {};
+    ['Rain', 'Int', 'Dry1', 'Dry2'].forEach((mode, i) => { dtcMode[mode] = Math.round(tcm.rows[i][0]); });
+    const tag = t => { const m = xml.match(new RegExp(`<${t}>([^<]*)</${t}>`)); return m ? m[1] : ''; };
+    return { desc: tag('desc'), date: tag('date'), muRows, targets, allocation, userShift,
+      reduction: red && +red[1] !== 0 ? 'cut' : 'retard', dtcMode, notes };
+  }
+
+  window.Bmwrc25 = { exportBmwrc25, importBmwrc25, x25 };
 })();

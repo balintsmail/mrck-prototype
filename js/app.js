@@ -477,7 +477,7 @@
     }));
   }
 
-  // Import MOTEC data: the system file browser, MoTeC .ld files only. The file is read in the browser
+  // Add MOTEC data: the system file browser, MoTeC .ld files only. The file is read in the browser
   // (motec-ld.js); the panel below the graph (log-panel.js) filters it and the graph draws the result behind
   // the slip targets: left and right lean on the same side (|lean|), slip >= 0 % only.
   const logView = new LogPanel($('logPanel'), {
@@ -548,12 +548,56 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     return xml;
   }
+  // Export writes into the last imported file (everything outside traction control stays as in it), else into EXPORT_BASE.
+  let imported = null;
   $('exportMrck').onclick = async () => {
     try {
+      if (imported) { exportFile(imported.xml, imported.name); return; }
       const res = await fetch(EXPORT_BASE, { cache: 'no-cache' });
       if (!res.ok) throw new Error(`base calibration not found (${EXPORT_BASE})`);
       exportFile(await res.text(), EXPORT_BASE.split('/').pop());
     } catch (err) { alert(`Export MRCK: ${err.message}`); }
+  };
+
+  // --- Import MRCK: the traction-control settings of a .bmwrc25 file replace the current ones: slip target maps,
+  // allocation, +- button factor / offset, reduction method and DTC mode. The μ levels of every map become the closest
+  // Degressive version: μ 1.00, the highest and the lowest μ stay as in the file, the degression is fitted to the levels
+  // between them (MuLines.fit) and those are recalculated from it.
+  $('importMrck').onclick = () => { $('importFile').value = ''; $('importFile').click(); };
+  $('importFile').onchange = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    let xml, data;
+    try {
+      xml = await f.text();
+      data = Bmwrc25.importBmwrc25(xml);
+      const mu = data.muRows || [];
+      if (mu.length !== D.MU_ROWS.length || mu.some((m, i) => Math.abs(m - D.MU_ROWS[i]) > 1e-6))
+        throw new Error(`its μ levels (${mu.join(', ')}) differ from the prototype's (${D.MU_ROWS.join(', ')})`);
+      if (data.targets.length !== D.targets.length) throw new Error(`it has ${data.targets.length} slip target maps, the prototype ${D.targets.length}`);
+    } catch (err) { alert(`Import MRCK: could not read ${f.name}:\n${err.message}`); return; }
+    if ((undo.length || redo.length) && !confirm(`Replace the traction control settings with ${f.name}?\nThe current changes and their history are discarded.`)) return;
+    const changed = [];
+    data.targets.forEach(t => {
+      t.mu = { mode: 'uniform', deg: 0, ptDeg: [] };
+      const before = JSON.stringify(t.rows);
+      MuLines.fit(t);
+      MuLines.derive(t);
+      if (JSON.stringify(t.rows) !== before) changed.push(t.id);
+    });
+    D.targets.splice(0, D.targets.length, ...data.targets);   // same array: the graphs and tables keep their reference
+    Object.keys(data.allocation).forEach(m => { D.allocation[m] = data.allocation[m]; });
+    Object.assign(D.userShift, data.userShift);
+    Object.assign(D.settings, { reduction: data.reduction, dtcMode: data.dtcMode });
+    D.source = data.desc || f.name.replace(/\.bmwrc25$/i, '');
+    imported = { xml, name: f.name };
+    undo.length = 0; redo.length = 0;
+    Object.assign(state, { targetIndex: 0, lastTarget: null, noSel: true, shiftLvl: null, picker: false });
+    sync();
+    const msg = [`Imported ${f.name}.`,
+      changed.length ? `μ levels converted to Degressive (closest fit) on Map ${changed.join(', ')}.` : 'The μ levels were already Degressive.']
+      .concat(data.notes).join('\n');
+    alert(msg);
   };
   window.MRCK_EXPORT = { exportFile, ecuTarget };   // for testing from the console
 
@@ -917,8 +961,6 @@
     $('pasteMap').title = mapClip ? `Paste Map ${mapClip.from} into Map ${t.id}` : 'Copy a map first';
   }
 
-  $('fileName').textContent = D.source || '';
-  $('fileName').title = D.source ? 'Loaded calibration: ' + D.source : '';
 
 
   // Clicking a neutral part of the app (empty background, labels, empty chart area) deselects the map.
@@ -967,14 +1009,28 @@
     root.setProperty('--chart-h', Math.max(300, Math.round(h)) + 'px');
   }
   window.addEventListener('resize', fitMain);
+  // Left column (beside the graph, ≥ 1000px): reaches down to SIDE_GAP above the window bottom, the same gap as above
+  // it, so its divider line runs to the bottom; it is sticky, so this follows the scroll position.
+  const SIDE_GAP = 12;
+  function fitSide() {
+    const side = document.querySelector('.side');
+    if (!side || side.hidden || window.innerWidth < 1000) { if (side) side.style.height = side.style.top = ''; return; }
+    const row = $('subTabs').hidden ? document.querySelector('.tabbar') : $('subTabs');   // the tab row stuck at the top
+    side.style.top = row.offsetHeight + SIDE_GAP + 'px';
+    side.style.height = Math.max(120, Math.round(window.innerHeight - side.getBoundingClientRect().top - SIDE_GAP)) + 'px';
+  }
+  window.addEventListener('resize', fitSide);
+  window.addEventListener('scroll', fitSide, { passive: true });
 
   function sync() {
     // a different map starts on its μ 1.00 level
     if (state.targetIndex !== state.lastTarget) { state.muIndex = D.MU_BASE; state.lastTarget = state.targetIndex; }
     // deselecting the map goes back to the default view: every map shown (maps added to the filter are cleared)
     if (state.noSel && !state.wasNoSel) state.mapFilter.clear();
+    // no map selected: the maps are always shown on their μ 1.00 level
+    if (noSel()) state.muIndex = D.MU_BASE;
     state.wasNoSel = state.noSel;
-    requestAnimationFrame(fitMain);
+    requestAnimationFrame(() => { fitMain(); fitSide(); });
     const modes = state.tab === 'modes', gears = state.tab === 'gears';
     const alloc = D.allocation[state.vmode];
     // In Modes the edited map is always one the selected vehicle mode uses,
@@ -1041,13 +1097,14 @@
     });
     const logged = logView.loaded;
     $('log').setAttribute('aria-pressed', logged);
-    $('logName').textContent = logged ? state.logName : 'Import MOTEC data';
+    $('logName').textContent = logged ? state.logName : 'Add MOTEC data';
     $('log').title = logged ? 'Import another log file' : '';
     $('logClear').hidden = !logged || tab === 'settings';    // log adjusters: in the left column; at the top of the log panel on tabs without one (+- Buttons)
     if (tab === 'user') { if (logView.side.parentNode !== $('logPanel')) $('logPanel').prepend(logView.side); }
     else if (logView.side.parentNode !== $('sideLog')) $('sideLog').appendChild(logView.side);
     logView.setContext({ visible: tab !== 'settings', gears: graphGears(), muBand: graphMuBand() });
 
+    syncChartTitle(self);
     syncHistory();
     syncMuPanel();
     syncSide();
@@ -1055,6 +1112,24 @@
     if (tableOn) syncTable(self);
     syncPicker();
     renderChart();
+  }
+
+  // Label above the graph: what it shows — the maps of a riding mode / gear / all maps, or the selected map.
+  function syncChartTitle(self) {
+    const tab = state.tab, el = $('chartTitle');
+    el.hidden = tab === 'settings' || state.picker;
+    // the selected μ level is kept lowercase (the label is upper case, which would turn μ into "Μ")
+    const muTxt = ` · <span class="lc">${esc(fmtMu(D.MU_ROWS[state.muIndex]))}</span>`;
+    let html;
+    if (tab === 'user') html = `+- button levels · slip target map ${self.id}${muTxt}`;
+    else if (!noSel()) {
+      const w = where();
+      html = `Slip target map ${self.id}` + (w !== `Map ${self.id}` ? ` · ${esc(w)}` : '') + muTxt;
+    } else if (tab === 'modes') html = `${esc(MODE_NAMES[state.vmode])} slip target maps`;
+    else if (tab === 'gears') html = `Gear #${state.cell.gear + 1} slip target maps`;
+    else html = state.mapFilter.size ? `Slip target maps ${[...state.mapFilter].sort((a, b) => a - b).join(', ')}` : 'All slip target maps';
+    el.innerHTML = html;
+    $('legendMu').textContent = `Map at ${fmtMu(D.MU_ROWS[state.muIndex])}`;   // the bold line = the selected μ level
   }
 
   // Riding modes / Gears / All slip target maps share one plot size: room for the longest right-hand
