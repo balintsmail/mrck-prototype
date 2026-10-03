@@ -67,12 +67,6 @@
     </div>`;
 
   const TEMPLATE = `
-    <div class="lp-head">
-      <span class="lp-legend">
-        <span><svg viewBox="0 0 26 12" aria-hidden="true"><path d="M1 9L9 4L17 7L25 2" stroke="${C.log}" stroke-width="1.2" fill="none"/><path d="M7.5 2.5l3 3m0-3l-3 3M15.5 5.5l3 3m0-3l-3 3" stroke="#8b8b92" stroke-width="1"/></svg>Logged slip</span>
-        <span><svg viewBox="0 0 26 12" aria-hidden="true"><path d="M1 6H25" stroke="#fff" stroke-width="1.5" stroke-dasharray="1.5 2.5" stroke-linecap="round"/></svg>ECU slip target (slip_tgt)</span>
-      </span>
-    </div>
     <div class="lp-body">
       <section class="lp-red" aria-label="DTC torque reduction over lean angle">
         <div class="lp-cap">DTC torque reduction <span class="lp-red-src"></span></div>
@@ -172,7 +166,7 @@
       const traces = [], target = [], reduction = [];
       let tr = null, tg = null, rd = null, shown = 0;
       for (let i = i0; i <= i1; i++) {
-        const ok = (!inCorner || inCorner[i]) && (!gear || f.gears.has(gear[i])) && mu[i] >= lo && mu[i] <= hi;
+        const ok = (!inCorner || inCorner[i]) && (!gear || !f.gears.size || f.gears.has(gear[i])) && mu[i] >= lo && mu[i] <= hi;
         const x = Math.abs(lean[i]);
         if (ok && slip[i] >= 0) { if (!tr) traces.push(tr = []); tr.push([x, slip[i]]); shown++; } else tr = null;
         if (ok && tgt && tgt[i] <= TGT_MAX) { if (!tg) target.push(tg = []); tg.push([x, tgt[i]]); } else tg = null;

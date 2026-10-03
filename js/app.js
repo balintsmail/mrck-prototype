@@ -1171,6 +1171,7 @@
       noGlow: user,                                   // +- Buttons: no gradient under the selected line
       overlays: user ? shiftOverlays() : maps && !state.editor ? allMapsOverlays() : [],   // other maps in the background; the editor overlay shows only the edited map
     });
+    $('logLegend').hidden = !logView.show;           // logged data legend in the title row, while the data is shown
     // legend swatches in the selected line's colour
     $('chartLegend').style.setProperty('--lc', chart.curves && chart.curves.active ? chart.curves.active.color : '#3f8ce8');
   }

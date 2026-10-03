@@ -693,3 +693,6 @@ body.no-scroll { overflow: hidden; }
 .chart-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 24px; margin: 10px 0; min-height: 15px; }
 .chart-head .chart-legend { padding: 0; gap: 4px 18px; }
 .chart-title .lc { text-transform: none; }
+.chart-legends { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 18px; margin-left: auto; }
+.chart-head .chart-legend[hidden] { display: none; }
+.log-legend svg { width: 26px; height: 12px; }
