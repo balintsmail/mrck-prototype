@@ -15,7 +15,9 @@
   const X_MAX = 70, X_MIN = 0, Y_MAX = 20, SLIP_MAX = 25.5;   // axis 0..20 %, grows (whole %) when a value is higher; values up to 25.5 %
   const NS = 'http://www.w3.org/2000/svg';
   const FADE = 0.5;                     // opacity of non-hovered curves while previewing another one
-  const MIN_PAD_R = 14;                 // right of the plot when there are no labels [px, scaled]
+  // Room right of the plot for the labels: one 11px label box as wide as two modes ("D1, D2"), the same on every view,
+  // so the plot never moves (labels are kept that short: RN / IN / D1 / D2, gear ranges #1-#4, "RN +2").
+  const LABEL_W = 48;
   const BOX_FS = 11, BOX_H = 17, BOX_PX = 5;   // gear / mode label boxes right of the graph: font, height, side padding [px]
   let uidSeq = 0;
 
@@ -125,10 +127,8 @@
       const H = Math.max(240, this.el.clientHeight || W * 0.93);
       const s = clamp(W / 600, 0.9, 1.3);
       const lfs = (this.o.compare || this.o.labelChars ? 10 : 9.5) * s;   // labelChars: fixed label room, same plot on every view
-      const boxW = this.o.compare ? 10 * s + labelChars * BOX_FS * 0.62 + 2 * BOX_PX + 4 : 0;   // gear / mode label boxes
-      // right: room the labels measured on the last render need (render() sets this.padR); first render: an estimate
       // top: none, so the plot starts level with the table on the left (the top axis label reaches above it)
-      const pad = { l: 40 * s, r: this.padR ?? Math.max(46 * s, 14 * s + labelChars * lfs * 0.62, boxW), t: 1, b: 30 * s };
+      const pad = { l: 40 * s, r: 10 * s + LABEL_W, t: 1, b: 30 * s };   // fixed: same plot on every view
       const g = { W, H, s, x0: pad.l, x1: W - pad.r, y0: pad.t, y1: H - pad.b };
       g.px = x => g.x0 + (X_MAX - x) / (X_MAX - X_MIN) * (g.x1 - g.x0);
       g.yMax = this.yMax || Y_MAX;
@@ -178,10 +178,18 @@
           if (hit) hit.items.push(sr); else groups.push({ id: sr.id, order: si, items: [sr], color: sr.color });
         });
         active = null;
+        // Short labels that fit the fixed label room: gears "#1, #2" / "#1-#4" (more than two: as a range), modes "D1, D2" /
+        // "RN +2" (more than two); the full list is in the tooltip.
+        const shortLabel = items => {
+          if (items.length <= 2) return items.map(x => x.name).join(', ');
+          const nums = items.map(x => /^#(\d+)$/.exec(x.name)).filter(Boolean).map(m => +m[1]);
+          if (nums.length === items.length) return `#${Math.min(...nums)}-#${Math.max(...nums)}`;
+          return `${items[0].name} +${items.length - 1}`;
+        };
         groups.forEach(gr => {
-          const label = gr.items.map(x => x.name).join(', ');
+          const label = shortLabel(gr.items);
           const descTxt = gr.items.map(x => x.desc).join(', ');
-          if (gr.id === t.id && !this.o.noActive) { active = { key: 'active', color: gr.color, label, gradient: true }; return; }
+          if (gr.id === t.id && !this.o.noActive) { active = { key: 'active', color: gr.color, label, gradient: true, tip: `Map ${t.id}: ${descTxt}` }; return; }
           const ct = this.o.targets.find(x => x.id === gr.id);
           list.push({ key: 't' + gr.id, target: gr.id, order: gr.order, lean: ct.lean, vals: ct.rows[mi], smooth: !!ct.smooth, color: gr.color,
             label, gradient: true, tip: `Click to edit Map ${gr.id} (${descTxt})` });
@@ -195,10 +203,9 @@
           if (i === mi) return;
           list.unshift({ key: 'mu' + i, mu: i, lean: t.lean, vals: t.rows[i], color: active.color,
             dotted: isLocked(i), points: !isLocked(i), tip: muTip(m, i), locked: isLocked(i),
-            // μ 1.00 stays labelled (clickable) while another level is selected; with MoTeC data (soloActive) every level is
-            label: m === 1 || this.o.soloActive ? fmtMu(m) : undefined });
+            // the selectable levels are labelled (boxed, clickable); with MoTeC data (soloActive) the calculated ones too (text)
+            label: !isLocked(i) || this.o.soloActive ? fmtMu(m) : undefined });
         });
-        if (this.o.soloActive) active.label += ' · ' + fmtMu(this.o.muRows[mi]);   // the bold line among the μ labels
       }
       Object.assign(active, { lean: t.lean, vals: this.o.activeVals || t.rows[mi], gradient: true });   // activeVals: read-only stand-in (e.g. a selected +- level)
       // soloActive (a map is selected while MoTeC data is shown): the other maps' lines and labels are hidden
@@ -366,11 +373,12 @@
       }
 
       // Right-hand labels with collision avoidance
-      // Gear / mode labels (Riding modes, Gears): 11px in a rounded box of the line's colour, dark text; the box gets
-      // 10 % darker on hover. Other labels (μ levels, maps, +- levels): coloured text.
-      const lfs = (this.o.compare ? 10 : 9.5) * s, gap = this.o.compare ? BOX_H + 2 : lfs * 1.15;
-      const boxed = l => this.o.compare && (l.active || l.c.target != null);
+      // Gear / mode labels (Riding modes, Gears), the selected line and the selectable μ levels: 11px in a rounded box of
+      // the line's colour, dark text; 10 % darker on hover. Other labels (calculated μ levels, other maps, +- levels): text.
+      const lfs = (this.o.compare ? 10 : 9.5) * s;
+      const boxed = l => !this.o.plainLabels && (l.active || (l.c.target != null ? !!this.o.compare : l.c.mu != null && !l.c.locked));
       const labels = list.filter(c => c.label).map(c => ({ c, y: c.vals.at(-1) })).concat(na ? [] : [{ c: active, y: active.vals.at(-1), active: true }]);
+      const gap = labels.some(boxed) ? BOX_H + 2 : lfs * 1.15;
       labels.forEach(l => (l.py = g.py(l.y)));
       labels.sort((a, b) => a.py - b.py);
       for (let i = 1; i < labels.length; i++)
@@ -384,7 +392,7 @@
         const x = g.x1 + 10 * s, fade = l.active ? fx('active') : fxa(l.c.key, l.c.labelAlpha ?? 1);
         if (boxed(l)) {
           const w = l.c.label.length * BOX_FS * 0.62 + 2 * BOX_PX;          // estimate; set to the measured text below
-          if (!l.active) this.labelRects.push({ key: l.c.key, x0: x, x1: x + w, y0: l.py - BOX_H / 2, y1: l.py + BOX_H / 2 });
+          this.labelRects.push({ key: l.active ? 'active' : l.c.key, tip: l.active ? l.c.tip : null, x0: x, x1: x + w, y0: l.py - BOX_H / 2, y1: l.py + BOX_H / 2 });
           out.push(`<g class="rl-box${previewKey === l.c.key ? ' is-hover' : ''}" data-lbox="${l.c.key}" ${fade}>` +
             `<rect x="${f(x)}" y="${f(l.py - BOX_H / 2)}" width="${f(w)}" height="${BOX_H}" rx="4" fill="${l.c.color}"/>` +
             `<text class="rl" x="${f(x + BOX_PX)}" y="${f(l.py)}" dominant-baseline="central" font-size="${BOX_FS}" fill="${C.bg}">${l.c.label}</text></g>`);
@@ -402,22 +410,9 @@
       this.svg.querySelectorAll('[data-lbox]').forEach(el => {
         const r = el.querySelector('rect'), w = el.querySelector('text').getComputedTextLength() + 2 * BOX_PX;
         r.setAttribute('width', f(w));
-        const lr = this.labelRects.find(x => x.key === el.dataset.lbox);
+        const lr = this.labelRects.find(x => x.key === (el.dataset.lbox === 'active' ? 'active' : el.dataset.lbox));
         if (lr) lr.x1 = lr.x0 + w;
       });
-      // Plot width follows the labels shown: the widest one ends at the right edge of the chart (the page keeps its
-      // 20px margin beyond it). When labels get wider / narrower (another view, map, μ level), lay out once more.
-      let right = 0;
-      this.svg.querySelectorAll('.rl-box rect').forEach(r => { right = Math.max(right, +r.getAttribute('x') + +r.getAttribute('width')); });
-      this.svg.querySelectorAll('text.rl').forEach(t => { if (!t.closest('.rl-box')) right = Math.max(right, +t.getAttribute('x') + t.getComputedTextLength()); });
-      const padR = Math.max(MIN_PAD_R * s, right ? right - g.x1 : 0);
-      if (Math.abs(padR - (this.padR ?? -1)) > 0.5 && !this._refit) {
-        this.padR = padR;
-        this._refit = true;
-        this.render();
-        this._refit = false;
-        return;
-      }
 
       // Flush styles, then move every element to its new state (CSS transitions, 0.2 s).
       const big = [hi, this.sel].filter(i => i != null);
@@ -513,7 +508,7 @@
       }
 
       const lr = this.labelRects.find(r => px >= r.x0 && px <= r.x1 && py >= r.y0 && py <= r.y1);
-      if (lr) return this._curveHit(lr.key);
+      if (lr) return lr.key === 'active' ? (lr.tip ? { type: 'atip', tip: lr.tip } : null) : this._curveHit(lr.key);   // the selected line's label: tooltip only
 
       let cb = null, cd = 6 * s;
       this.curves.list.forEach(c => {
@@ -538,6 +533,7 @@
         hit.type === 'point' ? 'Adjust this target point with drag & drop' :
         hit.type === 'add' ? 'Click to add a target point' :
         hit.type === 'del' ? 'Delete this target point' :
+        hit.type === 'atip' ? hit.tip :
         hit.curve.tip;
       if (!txt || !e || this.drag) { this.tip.classList.remove('is-on'); return; }
       const r = this.el.getBoundingClientRect();
@@ -610,6 +606,7 @@
         const hit = this._hit(px, py);
         // empty chart area: drop the point selection and tell the app (it deselects the map)
         if (!hit) { if (this.sel != null) { this.sel = null; this.render(); } this.o.onEmptyClick(); return; }
+        if (hit.type === 'atip') return;
         if (!this.o.editable && hit.type !== 'curve') return;
         e.preventDefault();
         if (hit.type === 'del') { this._delete(hit.i); return; }
@@ -641,7 +638,7 @@
         if (e.pointerType === 'touch') return;
         const hit = this._hit(px, py);
         if (!this._sameHit(hit, this.hv)) { this.hv = hit; this.render(); }
-        svg.style.cursor = !hit ? '' : hit.type === 'point' ? 'grab' : hit.type === 'curve' && hit.curve.locked ? 'default' : 'pointer';
+        svg.style.cursor = !hit || hit.type === 'atip' ? '' : hit.type === 'point' ? 'grab' : hit.type === 'curve' && hit.curve.locked ? 'default' : 'pointer';
         this._showTip(hit, e);
       });
       const end = e => {

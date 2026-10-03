@@ -179,9 +179,11 @@
 
   // Gears view: the maps the 4 vehicle modes use in one gear, one colour per mode.
   const MODE_COLORS = { Rain: '#3f8ce8', Int: '#3fa8a4', Dry1: '#e5a634', Dry2: '#d9354b' };
+  const MODE_SHORT = { Rain: 'RN', Int: 'IN', Dry1: 'D1', Dry2: 'D2' };
   const gearColumn = () => D.VEHICLE_MODES.map(m => D.allocation[m][state.cell.gear]);
   const gearSeries = () => D.VEHICLE_MODES.map(m => ({
-    id: D.allocation[m][state.cell.gear], name: MODE_NAMES[m], desc: MODE_NAMES[m], color: MODE_COLORS[m] || '#3f8ce8',
+    id: D.allocation[m][state.cell.gear], name: MODE_SHORT[m], desc: MODE_NAMES[m],   // graph label short (RN / IN / D1 / D2), full name in the tooltip
+    color: MODE_COLORS[m] || '#3f8ce8',
   }));
   // Left column (Gears view): gears as vertical tabs, each showing the map every mode uses.
   function selectGear(gi) {
@@ -1169,6 +1171,7 @@
       // maps of the selected and the hovered allocation cell are drawn thicker, if they are on the graph
       emphTargets: user || state.editor ? [] : [editId(), state.hoverMap].filter(x => x != null),
       noGlow: user,                                   // +- Buttons: no gradient under the selected line
+      plainLabels: user,                              // +- Buttons: level labels as text
       overlays: user ? shiftOverlays() : maps && !state.editor ? allMapsOverlays() : [],   // other maps in the background; the editor overlay shows only the edited map
     });
     $('logLegend').hidden = !logView.show;           // logged data legend in the title row, while the data is shown
