@@ -707,3 +707,21 @@ body.no-scroll { overflow: hidden; }
 .chart-legends [data-k]:focus-visible { outline: 2px solid #3f8ce8; outline-offset: 2px; }
 .chart-legends [data-k].is-off { opacity: .4; text-decoration: line-through; }
 .lp-map-src { margin-top: -2px; }
+/* ---------- Add MOTEC data: source modal ---------- */
+.modal { position: fixed; inset: 0; z-index: 60; background: rgba(4, 6, 12, .72); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal[hidden] { display: none; }
+.modal-box { width: min(440px, 100%); background: var(--bg); border: 1px solid var(--grid); border-radius: 6px; box-shadow: 0 20px 60px rgba(0, 0, 0, .6); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 12px 20px; border-bottom: 1px solid var(--grid); }
+.modal-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.modal-opts { display: grid; gap: 10px; padding: 20px; }
+.modal-opt {
+  display: flex; align-items: center; gap: 14px; height: auto; padding: 14px 16px; text-align: left;
+  background: rgba(255, 255, 255, .06); border: 1px solid var(--grid); border-radius: 4px; color: var(--text); cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.modal-opt:hover:not(:disabled), .modal-opt:focus-visible { background: rgba(63, 140, 232, .12); border-color: #3f8ce8; outline: none; }
+.modal-opt:disabled { opacity: .7; cursor: progress; }
+.modal-opt .material-icons { font-size: 26px; color: #3f8ce8; }
+.mo-txt { display: flex; flex-direction: column; gap: 3px; }
+.mo-txt b { font-size: 14px; font-weight: 700; }
+.mo-sub { font-size: 12px; color: var(--muted); font-weight: 400; }

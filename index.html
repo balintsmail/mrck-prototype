@@ -210,7 +210,21 @@
   </main>
   </div>
 </div>
-<!-- Map editor overlay (opened from the slip target allocation): the map graph, its data table and the Î¼ levels calculation -->
+<!-- Add MOTEC data: where the log comes from -->
+<div class="modal" id="logModal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="logModalTitle">
+    <div class="modal-head">
+      <h2 id="logModalTitle">Add MOTEC data</h2>
+      <button id="logModalClose" class="icon-btn" title="Close" aria-label="Close"><span class="material-icons" aria-hidden="true">close</span></button>
+    </div>
+    <div class="modal-opts">
+      <button class="modal-opt" id="logSample"><span class="material-icons" aria-hidden="true">dataset</span><span class="mo-txt"><b>Load sample data</b><span class="mo-sub">Bol d'Or sample data</span></span></button>
+      <button class="modal-opt" id="logBrowse"><span class="material-icons" aria-hidden="true">folder_open</span><span class="mo-txt"><b>Browse my files</b><span class="mo-sub">A MoTeC log file (.ld)</span></span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Map editor overlay (opened from the slip target allocation): the map graph, its data table and the μ levels calculation -->
 <div class="editor" id="editor" hidden>
   <div class="editor-box" role="dialog" aria-modal="true" aria-labelledby="editorTitle">
     <div class="editor-head">

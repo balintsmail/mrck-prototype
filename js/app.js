@@ -487,18 +487,42 @@
     geom: () => chart.g,                          // the reduction graph and timeline line up with the slip-target graph
     onChange(sel) { chart.o.log = sel; renderChart(); },   // renderChart passes showLog, soloActive and the μ filter band
   });
-  $('log').onclick = () => { $('logFile').value = ''; $('logFile').click(); };
+  function loadLog(buf, name) {
+    let data;
+    try { data = MotecLd.sessionData(MotecLd.parse(buf)); } catch (err) {
+      alert(`Could not read ${name}:\n${err.message}`);
+      return false;
+    }
+    state.logName = name;
+    logView.load(data, name);
+    sync();
+    return true;
+  }
+  // Add MOTEC data first asks where the log comes from: the built-in sample (a Bol d'Or race log, anonymised copy
+  // in samples/) or the user's own .ld file.
+  const SAMPLE_LOG = { url: 'samples/bol-dor-sample.ld', name: "Bol d'Or sample data" };
+  function setLogModal(open) {
+    $('logModal').hidden = !open;
+    if (open) $('logSample').focus(); else $('log').focus();
+  }
+  $('log').onclick = () => setLogModal(true);
+  $('logModalClose').onclick = () => setLogModal(false);
+  $('logModal').addEventListener('mousedown', e => { if (e.target === $('logModal')) setLogModal(false); });   // backdrop
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('logModal').hidden) setLogModal(false); });
+  $('logBrowse').onclick = () => { setLogModal(false); $('logFile').value = ''; $('logFile').click(); };
+  $('logSample').onclick = async () => {
+    const b = $('logSample'), sub = b.querySelector('.mo-sub'), was = sub.textContent;
+    b.disabled = true; sub.textContent = 'Loading…';
+    try {
+      const res = await fetch(SAMPLE_LOG.url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (loadLog(await res.arrayBuffer(), SAMPLE_LOG.name)) setLogModal(false);
+    } catch (err) { alert(`Could not load the sample data:\n${err.message}`); }
+    finally { b.disabled = false; sub.textContent = was; }
+  };
   $('logFile').onchange = async e => {
     const f = e.target.files[0];
-    if (!f) return;
-    let data;
-    try { data = MotecLd.sessionData(MotecLd.parse(await f.arrayBuffer())); } catch (err) {
-      alert(`Could not read ${f.name}:\n${err.message}`);
-      return;
-    }
-    state.logName = f.name;
-    logView.load(data, f.name);
-    sync();
+    if (f) loadLog(await f.arrayBuffer(), f.name);
   };
   $('logClear').onclick = () => { state.logName = null; logView.clear(); sync(); };
 

@@ -6,3 +6,5 @@ tools/motec/*_lean_slip.html
 # local MoTeC test logs
 *.ld
 *.ldx
+# the anonymised sample log used by "Load sample data"
+!samples/bol-dor-sample.ld
