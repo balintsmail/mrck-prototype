@@ -69,6 +69,7 @@
         <div class="lp-mu">
           <div class="lp-range">
             <div class="lp-track" style="background:${MU_GRADIENT}"></div><div class="lp-dim lp-dim-l"></div><div class="lp-dim lp-dim-r"></div>
+            <div class="lp-segs" aria-hidden="true"><div class="lp-seg-hover"></div></div>
             <div class="lp-bar" title="Drag to move the μ range · double-click for the full range"></div>
             <div class="lp-thumb" data-t="lo" tabindex="0" role="slider" aria-label="μ minimum" aria-valuemin="${MU_MIN}" aria-valuemax="${MU_MAX}"></div>
             <div class="lp-thumb" data-t="hi" tabindex="0" role="slider" aria-label="μ maximum" aria-valuemin="${MU_MIN}" aria-valuemax="${MU_MAX}"></div>
@@ -260,7 +261,9 @@
       this.q('.lp-dim-l').style.width = a + '%';
       this.q('.lp-dim-r').style.width = (100 - b) + '%';
       if (!this.ticksDone) {
-        this.q('.lp-ticks').innerHTML = this.o.muRows.filter((v, i) => i === 0 || Math.round(v * 10) % 4 === 0).map(v => `<span style="left:${pc(v)}%">${+v.toFixed(2)}</span>`).join('');
+        this.q('.lp-ticks').innerHTML = this.o.muRows.map(v => `<span style="left:${pc(v)}%">${+v.toFixed(2)}</span>`).join('');
+        const segs = this.q('.lp-segs');
+        if (!segs.querySelector('.lp-dot')) segs.insertAdjacentHTML('beforeend', this._muEdges().slice(1, -1).map(v => `<i class="lp-dot" style="left:${pc(v)}%"></i>`).join(''));
         this.ticksDone = true;
       }
       const ends = f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9;
@@ -288,7 +291,14 @@
       if (a > b) [a, b] = [b, a];
       this._set({ t0: clamp(a, 0, this.d.duration), t1: clamp(b, 0, this.d.duration) });
     }
+    // μ slider segments: from halfway below a μ level of the maps to halfway above it (the ends: -0.25 / 1.6)
+    _muEdges() {
+      const r = this.o.muRows;
+      return [MU_MIN, ...r.slice(1).map((v, i) => (r[i] + v) / 2), MU_MAX];
+    }
+    _muSeg(v) { const e = this._muEdges(); let k = 0; while (k < e.length - 2 && v > e[k + 1]) k++; return [e[k], e[k + 1]]; }
     _setMu(which, v) {
+      if (!Number.isFinite(v)) return;
       v = clamp(Math.round(v * 100) / 100, MU_MIN, MU_MAX);
       const f = this.f;
       if (which === 'lo') this._set({ autoMu: false, muLo: Math.min(v, f.muHi) });
@@ -333,31 +343,48 @@
       this.el.addEventListener('click', e => { if (!this.side.contains(e.target)) onClick(e); });   // the side block may be docked inside
 
       this.q('.lp-smooth-in').addEventListener('input', e => this._set({ smooth: +e.target.value }));   // slip smoothing 1..50 samples
-      // μ slider: drag an end, drag the bar between them (moves the range), or press on the track (nearest end jumps there)
-      const range = this.q('.lp-range');
-      const muAt = x => { const r = range.getBoundingClientRect(); return MU_MIN + (x - r.left) / r.width * (MU_MAX - MU_MIN); };
-      let drag = null;
+      // μ slider: drag an end, drag the bar between them (moves the range), drag on the track (the nearest end follows),
+      // or click a segment between two dots: the range from halfway below a μ level to halfway above it (e.g. 0.3–0.5)
+      const range = this.q('.lp-range'), hover = this.q('.lp-seg-hover');
+      const muAt = x => { const r = range.getBoundingClientRect(); return r.width ? MU_MIN + (x - r.left) / r.width * (MU_MAX - MU_MIN) : NaN; };
+      const pcOf = v => (v - MU_MIN) / (MU_MAX - MU_MIN) * 100;
+      const showHover = seg => {
+        hover.hidden = !seg;
+        if (seg) Object.assign(hover.style, { left: pcOf(seg[0]) + '%', width: (pcOf(seg[1]) - pcOf(seg[0])) + '%' });
+      };
+      showHover(null);
+      let drag = null, press = null;
       range.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
-        const v = muAt(e.clientX), f = this.f;
+        const v = muAt(e.clientX);
+        if (!Number.isFinite(v)) return;
         const t = e.target.closest('.lp-thumb');
         if (t) drag = { t: t.dataset.t };
-        else if (e.target.closest('.lp-bar')) drag = { t: 'bar', off: v - f.muLo, w: f.muHi - f.muLo };
-        else { drag = { t: Math.abs(v - f.muLo) <= Math.abs(v - f.muHi) ? 'lo' : 'hi' }; this._setMu(drag.t, v); }
+        else press = { x: e.clientX, v, bar: !!e.target.closest('.lp-bar') };   // click or drag: decided by the first move
         try { range.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
-        range.classList.toggle('is-moving', drag.t === 'bar');
         e.preventDefault();
       });
       range.addEventListener('pointermove', e => {
-        if (!drag) return;
-        const v = muAt(e.clientX);
+        const v = muAt(e.clientX), f = this.f;
+        if (!Number.isFinite(v)) return;
+        if (press && Math.abs(e.clientX - press.x) > 3) {      // a drag: the bar moves the range, the track pulls the nearest end
+          drag = press.bar ? { t: 'bar', off: press.v - f.muLo, w: f.muHi - f.muLo }
+            : { t: Math.abs(press.v - f.muLo) <= Math.abs(press.v - f.muHi) ? 'lo' : 'hi' };
+          press = null; showHover(null);
+          range.classList.toggle('is-moving', drag.t === 'bar');
+        }
+        if (!drag) { if (!press) showHover(e.target.closest('.lp-thumb') ? null : this._muSeg(v)); return; }
         if (drag.t === 'bar') {
-          const lo = clamp(Math.round((v - drag.off) * 100) / 100, MU_MIN, MU_MAX - drag.w);
-          this._set({ autoMu: false, muLo: lo, muHi: Math.round((lo + drag.w) * 100) / 100 });
+          const lo = clamp(Math.round((v - drag.off) * 1000) / 1000, MU_MIN, MU_MAX - drag.w);
+          this._set({ autoMu: false, muLo: lo, muHi: Math.round((lo + drag.w) * 1000) / 1000 });
         } else this._setMu(drag.t, v);
       });
+      range.addEventListener('pointerleave', () => { if (!drag) showHover(null); });
       range.addEventListener('dblclick', () => this._set({ autoMu: false, muLo: MU_MIN, muHi: MU_MAX }));   // double-click: full range
-      const end = () => { drag = null; range.classList.remove('is-moving'); };
+      const end = e => {
+        if (press && e.type === 'pointerup') { const [a, b] = this._muSeg(press.v); this._set({ autoMu: false, muLo: a, muHi: b }); }
+        drag = null; press = null; range.classList.remove('is-moving');
+      };
       range.addEventListener('pointerup', end);
       range.addEventListener('pointercancel', end);
       range.addEventListener('keydown', e => {

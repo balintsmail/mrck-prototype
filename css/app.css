@@ -766,7 +766,7 @@ body.no-scroll { overflow: hidden; }
 .layout.sim-mode #sideLog { order: 3; }
 .layout.sim-mode #mapDetails { order: 2; }
 .layout.sim-mode .side-alloc-h, .layout.sim-mode #allocTbl, .layout.sim-mode #allocMsg { display: none; }
-.layout.sim-mode .lp-side > :not(.lp-side-body), .layout.sim-mode .lp-side-body > :not(.lp-time) { display: none; }
+.layout.sim-mode .lp-side > :not(.lp-side-body) { display: none; }   /* Simulation: no show switch / smoothing; the filters below decide */
 .sim-side { border-top: 0; margin-top: 0 !important; padding-top: 0 !important; }
 .sim-side .side-h { margin: 0 0 8px; }
 .sim-pick { margin-bottom: 16px; }
@@ -782,3 +782,22 @@ body.no-scroll { overflow: hidden; }
 .sim-empty-h { margin: 0 0 6px; font-size: 18px; font-weight: 700; color: var(--text); }
 .sim-empty-p { margin: 0 0 22px; font-size: 13px; }
 .sim-empty-opts { width: min(440px, 100%); padding: 0; }
+.sim-sw-map { border-top: 3.5px solid; border-radius: 2px; }
+.sim-legend .sim-sw-mu { border-top: 1.5px dashed; }
+.sim-sw-tgt { border-top: 4px solid #fff; }
+/* Simulation: riding mode switch (one at a time) and gear buttons (several, like the laps) */
+.sim-modes { display: flex; }
+.sim-modes button { flex: 1; }
+.sim-gears .chip span { margin-left: 5px; font-weight: 600; opacity: .65; }
+.sim-gears .chip.is-edit { box-shadow: inset 0 -2px 0 #fff; }   /* the gear whose map is edited (when several are on) */
+/* Simulation selectors: label above the control */
+.sim-side .sim-pick { display: block; margin-bottom: 16px; }
+.sim-side .sim-pick .side-sub { margin: 0 0 8px; }
+/* μ range slider: dots halfway between the μ levels; click a segment between two dots, hover shows it */
+.lp-segs { position: absolute; left: 0; right: 0; top: 7px; height: 10px; pointer-events: none; }
+.lp-dot { position: absolute; top: 3px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(0, 0, 0, .25); }
+.lp-seg-hover { position: absolute; top: -1px; height: 12px; border-radius: 4px; background: rgba(0, 0, 0, .1); }
+.lp-seg-hover[hidden] { display: none; }
+/* Simulation: of the logged data filters only μ (no Automatically adjust) and the laps / timeline / circuit map */
+.layout.sim-mode .lp-side-body > :not(.lp-time):not(.lp-filter:has(.lp-mu)) { display: none !important; }
+.layout.sim-mode .lp-filter:has(.lp-mu) .switch { display: none; }

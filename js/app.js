@@ -103,6 +103,7 @@
     MuLines.derive(t);
     chart.render();
     if (!$('tableView').hidden) mapGrid.render();
+    if (state.tab === 'sim') simView.render();          // Simulation: the μ levels and the simulated target follow at once
   });
   $('muTables').addEventListener('focusout', e => {
     const inp = e.target.closest('input[type="text"]'); if (inp) inp.value = fmtVal(valueOf(inp), SLIDER[inp.dataset.kind]);
@@ -493,6 +494,7 @@
     filters: () => logView.f,                                 // timeline section + corners picked on the circuit map
     modes: D.VEHICLE_MODES.map(m => [m, MODE_NAMES[m]]),
     modeName: m => MODE_NAMES[m],
+    colorFor: id => mapColor(id),                             // the map's own colour, as on the other tabs
     mapFor: (m, g) => D.targets[indexOf(D.allocation[m][g - 1])],   // riding mode + gear -> slip target map (allocation)
     muRows: D.MU_ROWS,
     onSample: b => loadSample(b),                             // empty state: Load sample data / Browse my files
@@ -1025,8 +1027,9 @@
     state.noSel = true;
     sync();
   }
-  const INTERACTIVE = 'button, input, select, textarea, a, label, table, svg, [role="listbox"], [role="menu"], [role="tablist"], ' +
-    '.picker, .history, .menu, .appbar, .slip-tip, .mu-ctl, .editor';
+  // clicks that do NOT deselect: controls and content; the header and the empty parts of the tab rows do deselect
+  const INTERACTIVE = 'button, input, select, textarea, a, label, table, svg, canvas, [role="listbox"], [role="menu"], [role="tab"], ' +
+    '.picker, .history, .menu, .slip-tip, .mu-ctl, .editor, .modal, .lp-range, .seg';
   document.addEventListener('mousedown', e => {
     if (e.button !== 0 || e.target.closest(INTERACTIVE)) return;   // the chart reports its own empty clicks
     deselectMap();

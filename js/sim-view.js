@@ -7,7 +7,8 @@
 //    μ levels show their target points, which can be dragged as on the other tabs (the dragged level becomes the
 //    selected one, drawn bold); calculated levels are dashed. A μ label on the right selects that level.
 //  - μ-class graphs: the samples split into 0.2 wide μ classes, each in its colour, points and the median per 1° of
-//    lean — logged slip, and the longitudinal acceleration (accx_veh) as a duplicate; the legend switches classes.
+//    lean — logged slip, and the longitudinal acceleration (accx_veh) as a duplicate. The μ range slider of the logged
+//    data (left column) filters every graph on the tab.
 // The graphs share the slip-target graph's lean axis (70° -> 0° left to right).
 (function () {
   const X_MAX = 70, MU_STEP = 0.2, MIN_PER_DEG = 5, SLIP_MAX = 25.5;
@@ -71,28 +72,34 @@
       return c;
     }
     end() { this.c.restore(); }
-    rightLabel(text, y, color, bold) {
-      const c = this.c, g = this.g;
-      c.save(); c.fillStyle = color; c.font = bold ? "800 11px 'Noto Sans', system-ui, sans-serif" : FONT;
-      c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(text, g.x1 + 8, y); c.restore();
+    // a label right of the plot: boxed (rounded box in the colour, dark 11px text, as the slip-target graph's selectable
+    // levels) or plain coloured text
+    rightLabel(text, y, color, boxed, h) {
+      const c = this.c, g = this.g, x = g.x1 + 10;
+      c.save(); c.textAlign = 'left'; c.textBaseline = 'middle';
+      if (boxed) {
+        c.font = "700 11px 'Noto Sans', system-ui, sans-serif";
+        const w = c.measureText(text).width + 10;
+        c.fillStyle = color; c.beginPath();
+        c.roundRect ? c.roundRect(x, y - h / 2, w, h, 4) : c.rect(x, y - h / 2, w, h); c.fill();
+        c.fillStyle = '#0c0c12'; c.fillText(text, x + 5, y + 0.5);
+      } else { c.font = FONT; c.fillStyle = color; c.fillText(text, x, y); }
+      c.restore();
     }
   }
 
-  const PICK = (k, label, prev, next) => `
-      <div class="sim-pick" data-k="${k}">
-        <div class="side-sub">${label}</div>
-        <div class="sim-pick-row">
-          <button class="icon-btn sim-step" data-d="-1" aria-label="Previous ${label.toLowerCase()}" title="Previous ${label.toLowerCase()} (${prev})"><span class="material-icons" aria-hidden="true">chevron_left</span></button>
-          <select class="sim-sel" aria-label="${label}"></select>
-          <button class="icon-btn sim-step" data-d="1" aria-label="Next ${label.toLowerCase()}" title="Next ${label.toLowerCase()} (${next})"><span class="material-icons" aria-hidden="true">chevron_right</span></button>
-        </div>
-      </div>`;
   const SIDE = `
     <div class="side-h">Simulation</div>
-    ${PICK('mode', 'Riding mode', '←', '→')}
-    ${PICK('gear', 'Gear', '↑', '↓')}
+    <div class="sim-pick">
+      <div class="side-sub">Riding mode</div>
+      <div class="seg side-seg sim-modes" role="group" aria-label="Riding mode"></div>
+    </div>
+    <div class="sim-pick">
+      <div class="side-sub">Gears</div>
+      <div class="chip-list sim-gears" role="group" aria-label="Gears to simulate"></div>
+    </div>
     <div class="sim-info"></div>`;
-  const CLASSES_SUB = 'points and the median per 1° of lean · click a class to hide / show it';
+  const CLASSES_SUB = 'points and the median per 1° of lean';
   const TEMPLATE = `
     <div class="sim-empty" hidden>
       <span class="material-icons sim-empty-ic" aria-hidden="true">insights</span>
@@ -108,10 +115,8 @@
       <div class="sim-legend sim-legend-top"></div>
       <div class="sim-plot"><canvas class="sim-top" role="img"></canvas></div>
       <div class="sim-h">Logged slip by <span class="lc">μ</span> class <span class="sim-h-sub">0.2 μ steps · ${CLASSES_SUB}</span></div>
-      <div class="sim-legend sim-legend-bins"></div>
       <div class="sim-plot"><canvas class="sim-bot" role="img"></canvas></div>
       <div class="sim-h">Acceleration by <span class="lc">μ</span> class <span class="sim-h-sub">accx_veh [G] · ${CLASSES_SUB}</span></div>
-      <div class="sim-legend sim-legend-bins"></div>
       <div class="sim-plot"><canvas class="sim-acc" role="img"></canvas></div>
     </div>`;
 
@@ -123,7 +128,6 @@
     constructor(el, opts) {
       this.el = el; this.o = opts;
       this.gear = null; this.mode = 'Dry2';        // riding mode + gear -> the slip target map (allocation)
-      this.hiddenBins = new Set();
       el.innerHTML = TEMPLATE;
       this.side = document.createElement('section');
       this.side.className = 'side-block sim-side';
@@ -135,42 +139,45 @@
       this.acc = new Plot(this.q('.sim-acc'));
       this.q('.sim-sample').onclick = e => opts.onSample(e.currentTarget);   // empty state: the same two options as Add MOTEC data
       this.q('.sim-browse').onclick = () => opts.onBrowse();
-      this.side.querySelectorAll('.sim-pick').forEach(p => {
-        const k = p.dataset.k, sel = p.querySelector('select');
-        sel.onchange = () => this.set(k, k === 'gear' ? +sel.value : sel.value);
-        p.querySelectorAll('.sim-step').forEach(b => { b.onclick = () => this.step(k, +b.dataset.d); });
-      });
-      el.querySelectorAll('.sim-legend-bins').forEach(lg => lg.addEventListener('click', e => {
-        const b = e.target.closest('[data-bin]'); if (!b) return;
-        const k = +b.dataset.bin;
-        this.hiddenBins.has(k) ? this.hiddenBins.delete(k) : this.hiddenBins.add(k);
-        this.render();
-      }));
+      this.q('.sim-modes').addEventListener('click', e => { const b = e.target.closest('button[data-m]'); if (b) this.setMode(b.dataset.m); });
+      this.q('.sim-gears').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b && !b.disabled) this.toggleGear(+b.dataset.g); });
       this._bindEdit();
       new ResizeObserver(() => { if (!el.hidden) this.render(); }).observe(el);
     }
     // the corner shown: picked on the circuit map (0 = all; -1 = several)
     get corner() { const s = this.o.filters().corners; return s.size === 0 ? 0 : s.size === 1 ? [...s][0] : -1; }
+    // the edited map: riding mode + the gear clicked last (this.gear) among the selected gears (this.sel)
     get map() { return this.o.mapFor(this.mode, this.gear); }
-    cur(k) { return k === 'gear' ? this.gear : this.mode; }
-    options(k) { return [...this.q(`.sim-pick[data-k="${k}"] select`).options].map(o => (k === 'gear' ? +o.value : o.value)); }
-    set(k, v) { if (k === 'gear') { this.gear = v; this.autoGear = false; } else this.mode = v; this.o.onSelect(); }   // the app selects the map and re-syncs
-    step(k, d) {
-      const vals = this.options(k); if (!vals.length) return;
-      const i = vals.indexOf(this.cur(k)), next = vals[clamp(i + d, 0, vals.length - 1)];
-      if (next !== this.cur(k)) this.set(k, next);
+    setMode(m) { if (m !== this.mode) { this.mode = m; this.o.onSelect(); } }
+    // gears work like the lap buttons: a click turns a gear on / off (at least one stays on); the gear turned on last
+    // is the edited map (when it is turned off: the lowest one left)
+    toggleGear(g) {
+      this.autoGear = false;
+      if (!this.sel.has(g)) { this.sel.add(g); this.gear = g; }
+      else if (this.sel.size > 1) { this.sel.delete(g); if (g === this.gear) this.gear = Math.min(...this.sel); }
+      else return;
+      this.o.onSelect();
     }
-    // keyboard: ↑ / ↓ gear, ← / → riding mode (app.js calls this while the tab is open)
+    // keyboard: ← / → riding mode, ↑ / ↓ gear (selects that gear alone)
     key(e) {
-      const m = { ArrowUp: ['gear', -1], ArrowDown: ['gear', 1], ArrowLeft: ['mode', -1], ArrowRight: ['mode', 1] }[e.key];
-      if (!m || !this.o.getLog()) return false;
-      this.step(m[0], m[1]);
-      return true;
+      if (!this.o.getLog()) return false;
+      const modes = this.o.modes.map(m => m[0]);
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const i = modes.indexOf(this.mode), j = clamp(i + (e.key === 'ArrowLeft' ? -1 : 1), 0, modes.length - 1);
+        this.setMode(modes[j]); return true;
+      }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        const i = this.gears.indexOf(this.gear), g = this.gears[clamp(i + (e.key === 'ArrowUp' ? -1 : 1), 0, this.gears.length - 1)];
+        if (g !== this.gear || this.sel.size > 1) { this.autoGear = false; this.sel = new Set([g]); this.gear = g; this.o.onSelect(); }
+        return true;
+      }
+      return false;
     }
-    // the gear to simulate: kept, else the gear used most in the corners of the log
+    // the gears in the log's corners; by default only the most used one is selected
     currentGear() {
       const d = this.o.getLog();
-      if (!d) { if (!this.gear) { this.gear = 1; this.autoGear = true; } this.gears = [1, 2, 3, 4, 5, 6]; return this.gear; }   // placeholder until data arrives
+      if (!this.sel) this.sel = new Set();
+      if (!d) { if (!this.gear) { this.gear = 1; this.sel = new Set([1]); this.autoGear = true; } this.gears = [1, 2, 3, 4, 5, 6]; return this.gear; }   // placeholder until data arrives
       if (!this.counts || this.countsFor !== d) {
         const count = new Array(7).fill(0);
         if (d.gear) d.corners.forEach(c => c.ranges.forEach(([a, b]) => {
@@ -179,40 +186,45 @@
         this.counts = count; this.countsFor = d;
       }
       const gears = d.gear ? [1, 2, 3, 4, 5, 6].filter(g => this.counts[g]) : [1, 2, 3, 4, 5, 6];
-      if (this.autoGear || !gears.includes(this.gear)) this.autoGear = false, this.gear = d.gear ? gears.reduce((a, g) => (this.counts[g] > this.counts[a] ? g : a), gears[0]) : 1;
       this.gears = gears;
+      this.sel = new Set([...this.sel].filter(g => gears.includes(g)));
+      if (this.autoGear || !this.sel.size) {
+        this.autoGear = false;
+        this.gear = d.gear ? gears.reduce((a, g) => (this.counts[g] > this.counts[a] ? g : a), gears[0]) : 1;
+        this.sel = new Set([this.gear]);
+      }
+      if (!this.sel.has(this.gear)) this.gear = Math.min(...this.sel);
       return this.gear;
     }
 
-    // Samples of the selected gear in the selected corner(s) and time section, as runs of consecutive samples.
+    // Samples of the selected gears in the selected corner(s) and time section, as runs of consecutive samples.
     _select(d) {
       const f = this.o.filters();
-      const gearOk = i => !d.gear || Math.round(d.gear[i]) === this.gear;
+      const gearOk = i => !d.gear || this.sel.has(Math.round(d.gear[i]));
+      const [M0, M1] = LogPanel.MU_RANGE, muLo = f.muLo <= M0 + 1e-9 ? -Infinity : f.muLo, muHi = f.muHi >= M1 - 1e-9 ? Infinity : f.muHi;
       const ranges = (f.corners.size ? d.corners.filter(c => f.corners.has(c.n)) : d.corners).flatMap(c => c.ranges);
       const runs = [];
       ranges.forEach(([a, b]) => {
         a = Math.max(a, f.t0); b = Math.min(b, f.t1);
         let run = null;
         for (let i = Math.max(0, Math.floor(a * d.rate)); i < Math.min(d.n, Math.ceil(b * d.rate)); i++) {
-          const ok = gearOk(i) && Number.isFinite(d.slip[i]) && d.slip[i] >= 0 && Number.isFinite(d.mu[i]);
+          const ok = gearOk(i) && Number.isFinite(d.slip[i]) && d.slip[i] >= 0 && d.mu[i] >= muLo && d.mu[i] <= muHi;
+          // a new run where the gear changes, so each run is simulated with one map
+          if (ok && run && d.gear && Math.round(d.gear[i]) !== Math.round(d.gear[run[run.length - 1]])) run = null;
           if (ok) { if (!run) runs.push(run = []); run.push(i); } else run = null;
         }
       });
       return runs;
     }
 
-    _syncPickers(d) {
-      const ms = this.q('.sim-pick[data-k="mode"] select');
-      ms.innerHTML = this.o.modes.map(([k, name]) => `<option value="${k}">${name}</option>`).join('');
-      ms.value = this.mode;
-      const gs = this.q('.sim-pick[data-k="gear"] select');
-      gs.innerHTML = this.gears.map(g => `<option value="${g}">#${g} · Map ${this.o.mapFor(this.mode, g).id}</option>`).join('');
-      gs.value = this.gear;
-      this.side.querySelectorAll('.sim-pick').forEach(p => {
-        const vals = this.options(p.dataset.k), i = vals.indexOf(this.cur(p.dataset.k));
-        p.querySelector('[data-d="-1"]').disabled = i <= 0;
-        p.querySelector('[data-d="1"]').disabled = i >= vals.length - 1;
-      });
+    _syncPickers() {
+      this.q('.sim-modes').innerHTML = this.o.modes.map(([k, name]) =>
+        `<button data-m="${k}" aria-pressed="${k === this.mode}">${name}</button>`).join('');
+      this.q('.sim-gears').innerHTML = [1, 2, 3, 4, 5, 6].map(g => {
+        const on = this.sel.has(g), have = this.gears.includes(g), id = this.o.mapFor(this.mode, g).id;
+        return `<button class="chip lp-chip${g === this.gear && this.sel.size > 1 ? ' is-edit' : ''}" data-g="${g}" aria-pressed="${on}" style="--mc:#3f8ce8"` +
+          `${have ? '' : ' disabled'} title="${have ? `Gear ${g} · map ${id}${on && g === this.gear ? ' (edited)' : ''}` : `Gear ${g} is not used in the corners of this log`}">#${g}<span>M${id}</span></button>`;
+      }).join('');
     }
 
     // ---- editing the selected μ level on the top graph ----------------------
@@ -229,11 +241,11 @@
         }));
         return best;
       };
-      const hitLabel = (x, y) => (this.hit && x > this.hit.g.x1 ? (this.hit.labels.find(l => Math.abs(l.y - y) < 6) || null) : null);
+      const hitLabel = (x, y) => (this.hit && x > this.hit.g.x1 ? (this.hit.labels.find(l => Math.abs(l.y - y) < 9) || null) : null);
       cv.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
         const [x, y] = at(e), lab = hitLabel(x, y);
-        if (lab) { this.o.edit.selectMu(lab.r); return; }
+        if (lab) { if (lab.r >= 0) this.o.edit.selectMu(lab.r); return; }   // other gears' map labels are not selectable
         const p = hitPoint(x, y); if (!p) return;
         e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
         if (p.r !== this.hit.mi) this.o.edit.selectMu(p.r);    // dragging a level selects it
@@ -267,56 +279,79 @@
       this.side.classList.toggle('is-off', !d);
       if (!d) { this.q('.sim-info').textContent = 'Add MoTeC data to simulate.'; return; }
       this.currentGear();
-      this._syncPickers(d);
+      this._syncPickers();
       const t = this.map, muRows = this.o.muRows, col = LogPanel.muColor;
       const mi = this.o.edit.mu(), locked = this.o.edit.locked(t), editable = !locked.includes(mi);
       const runs = this._select(d), all = runs.flat(), corner = this.corner;
       const passes = corner > 0 ? (d.corners.find(c => c.n === corner) || { ranges: [] }).ranges.length : null;
-      this.q('.sim-info').textContent = `${this.o.modeName(this.mode)} #${this.gear} · slip target map ${t.id} · ${all.length.toLocaleString()} samples` +
+      const selG = [...this.sel].sort((a, b) => a - b);
+      // other selected gears with a different map: drawn thin (selected μ level) in their colour, simulated with their map
+      const others = [...new Map(selG.filter(gg => gg !== this.gear).map(gg => [this.o.mapFor(this.mode, gg).id, gg])).entries()]
+        .filter(([id]) => id !== t.id).map(([id, gg]) => ({ id, gg, t: this.o.mapFor(this.mode, gg) }));
+      this.q('.sim-info').textContent = `${this.o.modeName(this.mode)} ${selG.map(gg => '#' + gg).join(' ')} · map ${[t.id, ...others.map(o => o.id)].join(', ')} · ${all.length.toLocaleString()} samples` +
         (passes != null ? ` · ${passes} pass${passes === 1 ? '' : 'es'}` : '');
       this.q('.sim-h-top').textContent = `· ${this.o.modeName(this.mode)} #${this.gear} · map ${t.id} · μ ${fmtMu(muRows[mi])} selected` + (editable ? ' (drag its points)' : ' (calculated level)');
       const x = i => Math.abs(d.lean[i]);
 
-      // ---- top: logged slip coloured by μ, the map's μ levels, the target at the logged μ ----
+      // ---- top: logged slip coloured by μ, the map as on the first three tabs (selected map), the target at the logged μ ----
+      const mc = this.o.colorFor(t.id);                            // the map's own colour
       const c = this.top.begin(440, SLIP_Y), g = this.top.g;
       c.globalAlpha = 0.6;
       all.forEach(i => { c.fillStyle = col(d.mu[i]); c.fillRect(g.px(x(i)) - 1, g.py(d.slip[i]) - 1, 2, 2); });
+      c.globalAlpha = 1;
       const rowPath = r => { c.beginPath(); t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[r][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); }); };
-      muRows.forEach((m, r) => {                                   // μ levels: thin, in their μ colour
-        if (r === mi) return;
-        rowPath(r); c.strokeStyle = col(m); c.lineWidth = 1; c.globalAlpha = 0.8;
-        c.setLineDash(locked.includes(r) ? [4, 4] : []); c.stroke();
-      });
-      c.setLineDash([]); c.globalAlpha = 1;
-      runs.forEach(run => {                                        // the target at the logged μ, per pass
-        if (run.length < 2) return;
-        const path = () => { c.beginPath(); run.forEach((i, k) => { const X = g.px(x(i)), Y = g.py(targetAt(t, muRows, x(i), d.mu[i])); k ? c.lineTo(X, Y) : c.moveTo(X, Y); }); };
-        c.lineJoin = 'round'; c.lineCap = 'round';
-        path(); c.strokeStyle = 'rgba(12,12,18,.9)'; c.lineWidth = 6; c.stroke();
-        path(); c.strokeStyle = '#ffffff'; c.lineWidth = 3; c.stroke();
-      });
-      rowPath(mi); c.strokeStyle = col(muRows[mi]); c.lineWidth = 2.5; c.stroke();   // the selected μ level, on top
+      const top = t.rows.length - 1;                               // μ band: 10 % of the map colour between the lowest and highest level
+      c.beginPath();
+      t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[top][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); });
+      for (let j = t.lean.length - 1; j >= 0; j--) c.lineTo(g.px(t.lean[j]), g.py(t.rows[0][j]));
+      c.closePath(); c.fillStyle = mc; c.globalAlpha = 0.1; c.fill(); c.globalAlpha = 1;
       const rowsEd = muRows.map((m, r) => r).filter(r => !locked.includes(r));
-      rowsEd.forEach(r => {                                       // the other editable levels: small points, draggable
-        if (r !== mi) t.lean.forEach((lx, j) => {
+      muRows.forEach((m, r) => {                                   // other levels: calculated dotted, editable solid with points
+        if (r === mi) return;
+        rowPath(r); c.strokeStyle = mc;
+        if (locked.includes(r)) { c.lineWidth = 1.5; c.setLineDash([4, 8]); } else { c.lineWidth = 1; c.setLineDash([]); }
+        c.stroke(); c.setLineDash([]);
+        if (!locked.includes(r)) t.lean.forEach((lx, j) => {
           c.beginPath(); c.arc(g.px(lx), g.py(t.rows[r][j]), 3, 0, Math.PI * 2);
-          c.fillStyle = '#0c0c12'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = col(muRows[r]); c.stroke();
+          c.fillStyle = '#0c0c12'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = mc; c.stroke();
         });
       });
-      if (editable) t.lean.forEach((lx, j) => {
-        c.beginPath(); c.arc(g.px(lx), g.py(t.rows[mi][j]), 5, 0, Math.PI * 2);
-        c.fillStyle = '#ffffff'; c.fill(); c.lineWidth = 2; c.strokeStyle = col(muRows[mi]); c.stroke();
+      others.forEach(o => {                                        // other selected gears' maps: their selected μ level, thin
+        c.beginPath(); o.t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(o.t.rows[mi][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); });
+        c.strokeStyle = this.o.colorFor(o.id); c.lineWidth = 1.5; c.stroke();
+      });
+      runs.forEach(run => {                                        // the target at the logged μ, per pass: plain 4px white
+        if (run.length < 2) return;
+        const tr = d.gear ? this.o.mapFor(this.mode, Math.round(d.gear[run[0]])) : t;   // each pass with its gear's map
+        c.beginPath();
+        run.forEach((i, k) => { const X = g.px(x(i)), Y = g.py(targetAt(tr, muRows, x(i), d.mu[i])); k ? c.lineTo(X, Y) : c.moveTo(X, Y); });
+        c.lineJoin = 'round'; c.lineCap = 'round'; c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.stroke();
+      });
+      rowPath(mi); c.strokeStyle = mc; c.lineWidth = 3.5; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke();   // the selected level, on top
+      if (editable) t.lean.forEach((lx, j) => {                   // its points: white with a map-colour ring
+        c.beginPath(); c.arc(g.px(lx), g.py(t.rows[mi][j]), 5, 0, Math.PI * 2); c.fillStyle = '#ffffff'; c.fill(); c.lineWidth = 2; c.strokeStyle = mc; c.stroke();
       });
       this.top.end();
-      const labs = muRows.map((m, r) => ({ m, r, y: g.py(t.rows[r][t.rows[r].length - 1]) })).sort((a, b) => b.y - a.y);
-      for (let k = 1; k < labs.length; k++) labs[k].y = Math.min(labs[k].y, labs[k - 1].y - 11);
-      labs.forEach(l => this.top.rightLabel('μ ' + fmtMu(l.m), l.y, col(l.m), l.r === mi));
+      c.font = "700 11px 'Noto Sans', system-ui, sans-serif"; c.fillStyle = '#ffffff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      t.lean.forEach((lx, j) => {                                  // its values above the points (outside the clip: the end points too)
+        const X = g.px(lx), Y = g.py(t.rows[mi][j]);
+        c.fillText(t.rows[mi][j].toFixed(1) + '%', X, Y - 22 < g.y0 - 8 ? Y + 22 : Y - 22);
+      });
+      // right-hand labels: the selected and the editable levels boxed in the map colour, calculated ones as text
+      const BOX_H = 17, labs = muRows.map((m, r) => ({ m, r, text: 'μ ' + fmtMu(m), color: mc, boxed: !locked.includes(r) || r === mi, y: g.py(t.rows[r][t.rows[r].length - 1]) }))
+        .concat(others.map(o => ({ r: -1, text: `M${o.id} #${o.gg}`, color: this.o.colorFor(o.id), boxed: false, y: g.py(o.t.rows[mi][o.t.rows[mi].length - 1]) })))
+        .sort((a, b) => a.y - b.y);
+      const gap = BOX_H + 2;
+      for (let k = 1; k < labs.length; k++) if (labs[k].y - labs[k - 1].y < gap) labs[k].y = labs[k - 1].y + gap;
+      for (let k = labs.length - 1; k >= 0; k--) { const max = k === labs.length - 1 ? g.y1 : labs[k + 1].y - gap; if (labs[k].y > max) labs[k].y = max; }
+      labs.forEach(l => this.top.rightLabel(l.text, l.y, l.color, l.boxed, BOX_H));
       this.hit = { t, mi, g, editable, rowsEd, labels: labs };
       this.q('.sim-legend-top').innerHTML =
         `<span><i class="sim-sw sim-sw-dots"></i>Logged slip, coloured by μ</span>` +
-        `<span><i class="sim-sw sim-sw-mu"></i>μ levels of map ${t.id} (click a label to select)</span>` +
-        `<span><i class="sim-sw sim-sw-tgt"></i>Slip target at the logged μ</span>` +
-        `<span class="sim-scale"><span>μ ${fmtMu(LogPanel.MU_RANGE[0])}</span><i></i><span>${fmtMu(LogPanel.MU_RANGE[1])}</span></span>`;
+        `<span class="sim-scale"><span>μ ${fmtMu(LogPanel.MU_RANGE[0])}</span><i></i><span>${fmtMu(LogPanel.MU_RANGE[1])}</span></span>` +
+        `<span><i class="sim-sw sim-sw-map" style="border-color:${mc}"></i>Map ${t.id} at μ ${fmtMu(muRows[mi])}</span>` +
+        `<span><i class="sim-sw sim-sw-mu" style="border-color:${mc}"></i>Other μ levels (click a label to select)</span>` +
+        `<span><i class="sim-sw sim-sw-tgt"></i>Slip target at the logged μ</span>`;
 
       // ---- μ classes of 0.2 from 0 to 1.6; below 0 one class (-1), from 1.6 up another (8) ----
       const binOf = m => clamp(Math.floor(m / MU_STEP + 1e-9), -1, 8);
@@ -328,13 +363,11 @@
       const classes = (plot, h, Y, val) => {
         const cx = plot.begin(h, Y), gx = plot.g;
         keys.forEach(k => {
-          if (this.hiddenBins.has(k)) return;
           cx.fillStyle = col(binMid(k)); cx.globalAlpha = 0.22;
           bins.get(k).forEach(i => { const v = val(i); if (Number.isFinite(v)) cx.fillRect(gx.px(x(i)) - 1, gx.py(v) - 1, 2, 2); });
         });
         cx.globalAlpha = 1;
         keys.forEach(k => {                                       // median per 1° of lean
-          if (this.hiddenBins.has(k)) return;
           const per = Array.from({ length: X_MAX + 1 }, () => []);
           bins.get(k).forEach(i => { const b = Math.round(x(i)), v = val(i); if (b <= X_MAX && Number.isFinite(v)) per[b].push(v); });
           const pts = [];
@@ -348,15 +381,9 @@
       };
       classes(this.bot, 360, SLIP_Y, i => d.slip[i]);
       if (d.accx) classes(this.acc, 360, ACC_Y, i => d.accx[i]);
-      this.q('.sim-acc').closest('.sim-plot').previousElementSibling.previousElementSibling.querySelector('.sim-h-sub').textContent =
+      this.q('.sim-acc').closest('.sim-plot').previousElementSibling.querySelector('.sim-h-sub').textContent =
         d.accx ? `accx_veh [G] · ${CLASSES_SUB}` : 'not in this log (no accx_veh channel)';
-      const legend = keys.map(k => {
-        const n = bins.get(k).length;
-        return `<button class="sim-bin" data-bin="${k}" aria-pressed="${!this.hiddenBins.has(k)}" title="${n.toLocaleString()} samples">` +
-          `<i style="background:${col(binMid(k))}"></i>${binName(k)}<span>${n.toLocaleString()}</span></button>`;
-      }).join('') || '<span class="sim-none">No samples in this gear and corner</span>';
-      this.el.querySelectorAll('.sim-legend-bins').forEach(lg => { lg.innerHTML = legend; });
-      const what = `gear ${this.gear}, ${corner > 0 ? 'corner ' + corner : 'all corners'}`;
+      const what = `gear ${selG.join(', ')}, ${corner > 0 ? 'corner ' + corner : 'all corners'}`;
       this.q('.sim-top').setAttribute('aria-label', `Logged slip over lean angle, ${what}, with the slip target of map ${t.id} at the logged μ`);
       this.q('.sim-bot').setAttribute('aria-label', `Logged slip over lean angle by μ class, ${what}`);
       this.q('.sim-acc').setAttribute('aria-label', `Longitudinal acceleration over lean angle by μ class, ${what}`);
