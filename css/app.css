@@ -725,3 +725,60 @@ body.no-scroll { overflow: hidden; }
 .mo-txt { display: flex; flex-direction: column; gap: 3px; }
 .mo-txt b { font-size: 14px; font-weight: 700; }
 .mo-sub { font-size: 12px; color: var(--muted); font-weight: 400; }
+.lp-acc-box { position: relative; height: 240px; }
+.lp-acc-cv { display: block; }
+/* ---------- Simulation tab ---------- */
+.sim-panel[hidden] { display: none; }
+.sim-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; margin: 4px 0 18px; }
+.sim-bar.is-off .sim-pick { opacity: .4; pointer-events: none; }
+.sim-pick { display: flex; align-items: center; gap: 6px; }
+.sim-lbl { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-right: 4px; }
+.sim-sel { height: 32px; min-width: 200px; font-size: 13px; font-weight: 600; }
+.sim-step:disabled { opacity: .3; cursor: default; }
+.sim-info { color: var(--muted); font-size: 12px; font-weight: 600; margin-left: auto; }
+.sim-empty { padding: 60px 0; text-align: center; color: var(--muted); }
+.sim-empty[hidden], .sim-body[hidden] { display: none; }
+.sim-empty .ico-btn { margin: 8px auto 0; background: rgba(255, 255, 255, .2); }
+.sim-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+.sim-h:not(:first-child) { margin-top: 30px; }
+.sim-h-sub { text-transform: none; letter-spacing: 0; font-weight: 600; }
+.sim-plot { position: relative; width: 100%; }
+.sim-plot canvas { display: block; }
+.sim-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; font-size: 11px; font-weight: 600; color: var(--muted); margin: 0 0 6px; min-height: 22px; }
+.sim-legend > span { display: inline-flex; align-items: center; gap: 7px; }
+.sim-sw { display: inline-block; width: 18px; height: 0; }
+.sim-sw-dots { height: 6px; background: radial-gradient(circle, #36b2e3 1.5px, transparent 2px) 0 0 / 6px 6px repeat-x; }
+.sim-sw-mu { border-top: 1px solid #f5d846; }
+.sim-sw-tgt { border-top: 3px solid #fff; border-radius: 2px; }
+.sim-scale i { display: inline-block; width: 90px; height: 6px; border-radius: 3px;
+  background: linear-gradient(90deg, #2a3fae 0%, #2f6fe0 20%, #36b2e3 40%, #86d9b6 55%, #f5d846 70%, #f38e2e 85%, #e0282e 100%); }
+.sim-bin { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; font-size: 11px; font-weight: 700; color: var(--text);
+  background: rgba(255, 255, 255, .06); border: 1px solid var(--grid); border-radius: 3px; }
+.sim-bin i { width: 10px; height: 10px; border-radius: 2px; }
+.sim-bin span { color: var(--muted); font-weight: 600; }
+.sim-bin[aria-pressed="false"] { opacity: .4; }
+.sim-none { color: var(--muted); }
+.sim-h .lc { text-transform: none; }
+/* Simulation tab, left column: its selectors, then the logged data's timeline / circuit map, then the map details */
+#simSide[hidden] { display: none; }
+.layout.sim-mode .side:not([hidden]) { display: flex; flex-direction: column; }
+.layout.sim-mode #simSide { order: 1; }
+.layout.sim-mode #sideLog { order: 3; }
+.layout.sim-mode #mapDetails { order: 2; }
+.layout.sim-mode .side-alloc-h, .layout.sim-mode #allocTbl, .layout.sim-mode #allocMsg { display: none; }
+.layout.sim-mode .lp-side > :not(.lp-side-body), .layout.sim-mode .lp-side-body > :not(.lp-time) { display: none; }
+.sim-side { border-top: 0; margin-top: 0 !important; padding-top: 0 !important; }
+.sim-side .side-h { margin: 0 0 8px; }
+.sim-pick { margin-bottom: 16px; }
+.sim-pick .side-sub { margin: 0 0 6px; }
+.sim-pick-row { display: flex; align-items: center; gap: 6px; }
+.sim-pick-row .sim-sel { flex: 1; min-width: 0; }
+.sim-side.is-off .sim-pick { opacity: .4; pointer-events: none; }
+.sim-side .sim-info { margin: 0; }
+/* Simulation: empty state until MoTeC data is loaded (the two options of Add MOTEC data) */
+.sim-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 80px 16px 40px; color: var(--muted); }
+.sim-empty[hidden] { display: none; }
+.sim-empty-ic { font-size: 40px; color: #3f8ce8; margin-bottom: 14px; }
+.sim-empty-h { margin: 0 0 6px; font-size: 18px; font-weight: 700; color: var(--text); }
+.sim-empty-p { margin: 0 0 22px; font-size: 13px; }
+.sim-empty-opts { width: min(440px, 100%); padding: 0; }

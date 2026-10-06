@@ -7,7 +7,7 @@
 // The filtered samples go to the graph through opts.onChange({ traces, target }) (see SlipChart._logPath).
 (function () {
   const MU_MIN = -0.25, MU_MAX = 1.6, X_MAX = 70, TGT_MAX = 25.5, GEARS = [1, 2, 3, 4, 5, 6];
-  const C = { accent: '#3f8ce8', log: '#545459', red: '#8b8b92', grid: '#ffffff', muted: '#858588', text: '#ffffff', sel: 'rgba(63,140,232,.16)', lapBand: 'rgba(255,255,255,.035)' };
+  const C = { accelLine: '#2a7fe0', accent: '#3f8ce8', log: '#545459', red: '#8b8b92', grid: '#ffffff', muted: '#858588', text: '#ffffff', sel: 'rgba(63,140,232,.16)', lapBand: 'rgba(255,255,255,.035)' };
   // μ colour scale, dark blue (low) → red (high), as in the Lean vs Slip viewer (tools/motec, dark theme);
   // fixed to the μ slider's range, values outside take the end colours
   const MU_STOPS = [[0, '#2a3fae'], [0.2, '#2f6fe0'], [0.4, '#36b2e3'], [0.55, '#86d9b6'], [0.7, '#f5d846'], [0.85, '#f38e2e'], [1, '#e0282e']];
@@ -24,6 +24,7 @@
   // ACC_PCT percentile of the positive longitudinal acceleration (accx_veh), so single spikes do not set it; bands with
   // fewer than ACC_MIN samples are left out; a 3-band moving average smooths it. Peak = the highest point.
   const ACC_BIN = 0.5, ACC_BINS = 52, ACC_PCT = 0.9, ACC_MIN = 8;
+  const AV_XMIN = -2, AV_H = 240;   // acceleration vs slip chart: slip axis from -2 %, height [px]
   function accelProfile(bins) {
     const raw = bins.map((v, b) => {
       if (v.length < ACC_MIN) return null;
@@ -96,6 +97,10 @@
       <section class="lp-red" aria-label="DTC torque reduction over lean angle">
         <div class="lp-cap">DTC torque reduction <span class="lp-red-src"></span></div>
         <div class="lp-red-box"><svg class="lp-red-svg" role="img"></svg></div>
+      </section>
+      <section class="lp-acc" aria-label="Acceleration over slip">
+        <div class="lp-cap">Acceleration vs slip <span class="lp-acc-src"></span></div>
+        <div class="lp-acc-box"><canvas class="lp-acc-cv" role="img" aria-label="Positive longitudinal acceleration [G] over slip [%]"></canvas></div>
       </section>
     </div>`;
 
@@ -204,6 +209,7 @@
       }
       const traces = [], target = [], reduction = [];
       const bins = accx ? Array.from({ length: ACC_BINS }, () => []) : null;   // positive acceleration per slip band
+      const xSlip = d.slipF2 || slip, av = { x: [], y: [], mu: [] }, avBins = Array.from({ length: ACC_BINS }, () => []);
       let tr = null, tg = null, rd = null, shown = 0;
       for (let i = i0; i <= i1; i++) {
         const ok = (!inCorner || inCorner[i]) && (!gear || !f.gears.size || f.gears.has(gear[i])) && mu[i] >= lo && mu[i] <= hi;
@@ -212,8 +218,17 @@
         if (ok && tgt && tgt[i] <= TGT_MAX) { if (!tg) target.push(tg = []); tg.push([x, tgt[i]]); } else tg = null;
         if (ok && red) { if (!rd) reduction.push(rd = []); rd.push([x, red[i], mu[i]]); } else rd = null;
         if (bins && ok && slip[i] >= 0 && accx[i] > 0) { const b = Math.floor(slip[i] / ACC_BIN); if (b < ACC_BINS) bins[b].push(accx[i]); }
+        // acceleration vs slip chart: Slip_V_Ref_F2 (the logged slip when v_rear / v_ref are missing), positive acceleration
+        if (accx && ok && accx[i] > 0) {
+          const sx = xSlip[i];
+          if (Number.isFinite(sx) && sx >= AV_XMIN) {
+            av.x.push(sx); av.y.push(accx[i]); av.mu.push(mu[i]);
+            const b = Math.floor(sx / ACC_BIN); if (sx >= 0 && b < ACC_BINS) avBins[b].push(accx[i]);
+          }
+        }
       }
       this.sel = { traces, target, accel: bins ? accelProfile(bins) : null };
+      this.av = accx ? Object.assign(av, { profile: accelProfile(avBins) }) : null;
       this.reduction = reduction;
       this.shown = shown;
     }
@@ -230,6 +245,7 @@
       this.side.classList.toggle('is-off', !f.show);
       const full = d.laps.filter(l => l.full);
       this.q('.lp-info').textContent = [m.venue, m.session, full.length ? `${full.length} lap${full.length > 1 ? 's' : ''}` : '', fmtClock(d.duration) + ' min'].filter(Boolean).join(' · ');
+      this.q('.lp-acc-src').textContent = d.slipF2 ? '[G] · ' + d.slipF2Src : '[G] · logged slip (no v_rear / v_ref for Slip_V_Ref_F2)';
       this.q('.lp-red-src').textContent = d.red ? `[Nm] · ${d.redSource}` : '· not in this log';
       // gears
       this.q('.lp-gears').innerHTML = GEARS.map(g => `<button class="chip" data-g="${g}" aria-pressed="${f.gears.has(g)}" style="--mc:${C.accent}" ${d.gear ? '' : 'disabled title="No Gear channel in this log"'}>${g}</button>`).join('');
@@ -429,9 +445,61 @@
       svg.innerHTML = out.join('');
     }
 
+    // Acceleration vs slip: one dot per filtered sample with positive acceleration, coloured by μ (same scale as the μ
+    // slider), and the 90th-percentile line per slip band in blue with its peak. X: Slip_V_Ref_F2 [%], Y: accx_veh [G].
+    _drawAccelChart() {
+      const cv = this.q('.lp-acc-cv'), box = this.q('.lp-acc-box'), W = box.clientWidth, H = AV_H, av = this.av;
+      if (!W) return;
+      const dpr = window.devicePixelRatio || 1, g = this.o.geom(), s = g ? g.s : 1, k = g && g.W ? W / g.W : 1;
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
+      const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+      const x0 = g ? g.x0 * k : 40, x1 = g ? g.x1 * k : W - 50, y0 = 8, y1 = H - 26 * s;
+      // ranges: x from AV_XMIN to the 99.5th percentile of slip (at least 20 %), y from 0 to the top acceleration
+      let xMax = 20, yMax = 1.5;
+      if (av && av.x.length) {
+        const xs = Float32Array.from(av.x).sort();
+        xMax = Math.max(20, Math.ceil(xs[Math.floor(xs.length * 0.995)] / 5) * 5);
+        let top = 0; for (const v of av.y) if (v > top) top = v;
+        yMax = Math.max(1.5, Math.ceil(top * 2) / 2);
+      }
+      const px = v => x0 + (v - AV_XMIN) / (xMax - AV_XMIN) * (x1 - x0), py = v => y1 - v / yMax * (y1 - y0);
+      // grid + axis labels (as the other graphs: dotted white, bold white labels)
+      ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.setLineDash([1, 2]); ctx.lineWidth = 1; ctx.beginPath();
+      for (let v = 0; v <= xMax; v += 2) { const X = Math.round(px(v)) + 0.5; ctx.moveTo(X, y0); ctx.lineTo(X, y1); }
+      for (let v = 0; v <= yMax + 1e-9; v += 0.25) { const Y = Math.round(py(v)) + 0.5; ctx.moveTo(x0, Y); ctx.lineTo(x1, Y); }
+      ctx.stroke(); ctx.restore();
+      ctx.fillStyle = C.text; ctx.font = `700 ${Math.round(10 * s)}px "Noto Sans", system-ui, sans-serif`;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      for (let v = 0; v <= yMax + 1e-9; v += 0.5) ctx.fillText(`${+v.toFixed(2)} G`, x0 - 10 * s, py(v));
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      for (let v = 0; v <= xMax; v += 2) ctx.fillText(`${v}%`, px(v), y1 + 8 * s);
+      if (!av || !this.f.show) return;
+      // dots, grouped by colour
+      ctx.globalAlpha = 0.55;
+      const byBin = MU_LUT.map(() => []);
+      for (let i = 0; i < av.x.length; i++) if (av.x[i] <= xMax) byBin[muBin(av.mu[i])].push(i);
+      byBin.forEach((idx, b) => {
+        if (!idx.length) return;
+        ctx.fillStyle = MU_LUT[b];
+        idx.forEach(i => ctx.fillRect(px(av.x[i]) - 1, py(av.y[i]) - 1, 2, 2));
+      });
+      ctx.globalAlpha = 1;
+      // 90th percentile line + peak
+      const p = av.profile;
+      if (p) {
+        ctx.strokeStyle = C.accelLine; ctx.lineWidth = 2.5 * s; ctx.lineJoin = ctx.lineCap = 'round'; ctx.beginPath();
+        p.pts.forEach(([x, v], i) => (i ? ctx.lineTo(px(x), py(v)) : ctx.moveTo(px(x), py(v))));
+        ctx.stroke();
+        const [ps, pv] = p.peak;
+        ctx.fillStyle = C.accelLine; ctx.beginPath(); ctx.arc(px(ps), py(pv), 3.5 * s, 0, 6.2832); ctx.fill();
+        ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.font = `700 ${Math.round(9.5 * s)}px "Noto Sans", system-ui, sans-serif`;
+        ctx.fillText(`${pv.toFixed(2)} G @ ${ps.toFixed(1)} %`, px(ps) + 8 * s, py(pv) - 4 * s);
+      }
+    }
+
     _redrawSoon() {
       if (this.raf) return;
-      this.raf = requestAnimationFrame(() => { this.raf = 0; if (this.d && !this.el.hidden) { this._drawReduction(); this._drawTimeline(); this._drawMap(); } });
+      this.raf = requestAnimationFrame(() => { this.raf = 0; if (this.d && !this.el.hidden) { this._drawReduction(); this._drawAccelChart(); this._drawTimeline(); this._drawMap(); } });
     }
 
     // Same x geometry as the slip-target graph (its plot left / right edges), so lean angles line up.
@@ -534,5 +602,7 @@
     }
   }
 
+  LogPanel.muColor = m => MU_LUT[muBin(m)];   // the μ colour scale (dark blue -> red), also used by the Simulation tab
+  LogPanel.MU_RANGE = [MU_MIN, MU_MAX];
   window.LogPanel = LogPanel;
 })();

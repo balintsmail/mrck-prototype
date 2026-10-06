@@ -104,6 +104,16 @@
     d.tgt = resample(opt('slip_tgt'));
     d.vref = resample(opt('v_ref'));
     d.accx = resample(opt('accx_veh'));            // longitudinal acceleration [G]: the acceleration-vs-slip profile
+    // Slip_V_Ref_F2, the team's i2 math channel (Workspaces/BMW/Maths/User2.xml):
+    //   Slip v_Ref = ('v_rear' − 'v_ref') / 'v_ref'  [%];  Slip_V_Ref_F2 = smooth('Slip v_Ref', 21)  (21-sample moving average)
+    // Below SLIP_VREF_MIN km/h v_ref the ratio is not meaningful and the sample is left out (NaN).
+    const vRear = resample(opt('v_rear'));
+    if (vRear && d.vref) {
+      const raw = new Float32Array(n);
+      for (let i = 0; i < n; i++) raw[i] = d.vref[i] > SLIP_VREF_MIN ? (vRear[i] - d.vref[i]) / d.vref[i] * 100 : NaN;
+      d.slipF2 = smoothNaN(raw, 21);
+      d.slipF2Src = 'Slip_V_Ref_F2 = smooth((v_rear − v_ref) / v_ref, 21)';
+    } else { d.slipF2 = null; d.slipF2Src = null; }
     d.lat = resample(opt('GPS Latitude'));        // track map (0 = no GPS fix)
     d.lon = resample(opt('GPS Longitude'));
     // DTC torque reduction: its own channel when logged, else requested torque − DTC torque target (never below 0)
@@ -117,6 +127,19 @@
     d.brake = resample(opt('p_brake_fr'));           // segment starts (braking points)
     d.corners = findCorners(d, opt('s_track'));      // also sets d.refLap
     return d;
+  }
+
+  // i2 smooth(x, k): centred moving average over k samples; NaN samples are skipped (NaN where all k are NaN).
+  const SLIP_VREF_MIN = 10;
+  function smoothNaN(src, k) {
+    const n = src.length, sum = new Float64Array(n + 1), cnt = new Int32Array(n + 1), out = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const ok = Number.isFinite(src[i]); sum[i + 1] = sum[i] + (ok ? src[i] : 0); cnt[i + 1] = cnt[i] + (ok ? 1 : 0); }
+    const back = Math.floor((k - 1) / 2), fwd = k - 1 - back;
+    for (let i = 0; i < n; i++) {
+      const a = Math.max(0, i - back), b = Math.min(n - 1, i + fwd), c = cnt[b + 1] - cnt[a];
+      out[i] = Number.isFinite(src[i]) && c ? (sum[b + 1] - sum[a]) / c : NaN;
+    }
+    return out;
   }
 
   // Laps from the beacon times: at the first sample after "Running Lap Time" resets,

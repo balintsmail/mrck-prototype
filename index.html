@@ -46,6 +46,7 @@
     <button role="tab" id="tabGears" data-tab="gears" data-nav="top" aria-controls="chart">Gears</button>
     <button role="tab" id="tabMaps" data-tab="maps" data-nav="top" aria-controls="chart">All slip target maps</button>
     <button role="tab" id="tabUser" data-tab="user" aria-controls="shiftPanel">+- Buttons</button>
+    <button role="tab" id="tabSim" data-tab="sim" aria-controls="simPanel">Simulation</button>
     <button role="tab" id="tabSettings" data-tab="settings" aria-controls="settingsPanel">Settings</button>
   </div>
     <div class="group view-actions" id="viewActions">
@@ -72,6 +73,8 @@
   <div class="layout">
   <!-- Left column: which map each vehicle mode / gear uses -->
   <aside class="side" aria-label="Slip target allocation">
+    <!-- Simulation tab: gear / corner selectors (sim-view.js) -->
+    <div id="simSide"></div>
     <!-- Contextual: map selector for the All slip target maps / User offset views -->
     <div class="side-tabs" id="sideCtx" hidden>
       <div class="picker-list ctx-list" id="mapList" role="listbox" aria-label="Slip target maps"></div>
@@ -149,6 +152,9 @@
       <div class="chart" id="pickChart"></div>
     </div>
   </section>
+
+  <!-- Simulation (sim-view.js): slip target at the logged μ for a gear / corner of the imported MoTeC log -->
+  <section class="sim-panel" id="simPanel" hidden aria-label="Simulation"></section>
 
   <div id="mainView">
 
@@ -244,6 +250,7 @@
 <script src="js/slip-chart.js"></script>
 <script src="js/motec-ld.js"></script>
 <script src="js/log-panel.js"></script>
+<script src="js/sim-view.js"></script>
 <script src="js/bmwrc25.js"></script>
 <script src="js/app.js"></script>
 <script src="js/page-scrollbar.js"></script>

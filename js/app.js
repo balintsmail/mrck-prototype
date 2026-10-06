@@ -485,8 +485,35 @@
   const logView = new LogPanel($('logPanel'), {
     muRows: D.MU_ROWS,
     geom: () => chart.g,                          // the reduction graph and timeline line up with the slip-target graph
-    onChange(sel) { chart.o.log = sel; renderChart(); },   // renderChart passes showLog, soloActive and the μ filter band
+    onChange(sel) { chart.o.log = sel; renderChart(); if (state.tab === 'sim') simView.render(); },   // renderChart passes showLog, soloActive and the μ filter band
   });
+  // Simulation tab: the slip target at the logged μ, per gear (its Dry 2 map) and corner of the imported log.
+  const simView = new SimView($('simPanel'), {
+    getLog: () => logView.d,
+    filters: () => logView.f,                                 // timeline section + corners picked on the circuit map
+    modes: D.VEHICLE_MODES.map(m => [m, MODE_NAMES[m]]),
+    modeName: m => MODE_NAMES[m],
+    mapFor: (m, g) => D.targets[indexOf(D.allocation[m][g - 1])],   // riding mode + gear -> slip target map (allocation)
+    muRows: D.MU_ROWS,
+    onSample: b => loadSample(b),                             // empty state: Load sample data / Browse my files
+    onBrowse: () => browseLog(),
+    onSelect: () => sync(),                                   // riding mode / gear changed: that map becomes the edited map
+    edit: {                                                   // the selected μ level of that map, dragged on the top graph
+      mu: () => state.muIndex,
+      locked: t => MuLines.lockedRows(t),
+      start: () => pushUndo(),
+      change: t => { if (t.mu && t.mu.mode === 'ratio') t.mu.ref = state.muIndex; MuLines.derive(t); sync(); },
+      selectMu: r => { state.muIndex = r; sync(); },
+    },
+  });
+  $('simSide').appendChild(simView.side);
+  // ↑ / ↓ gear, ← / → corner, unless a field, list or dialog has the keys
+  document.addEventListener('keydown', e => {
+    if (state.tab !== 'sim' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !$('logModal').hidden) return;
+    if (document.activeElement && document.activeElement.closest('input, select, textarea, [role="menu"]')) return;
+    if (simView.key(e)) e.preventDefault();
+  });
+
   function loadLog(buf, name) {
     let data;
     try { data = MotecLd.sessionData(MotecLd.parse(buf)); } catch (err) {
@@ -510,16 +537,19 @@
   $('logModal').addEventListener('mousedown', e => { if (e.target === $('logModal')) setLogModal(false); });   // backdrop
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('logModal').hidden) setLogModal(false); });
   $('logBrowse').onclick = () => { setLogModal(false); $('logFile').value = ''; $('logFile').click(); };
-  $('logSample').onclick = async () => {
-    const b = $('logSample'), sub = b.querySelector('.mo-sub'), was = sub.textContent;
+  // Load sample data: from the modal or the Simulation tab's empty state (b = the clicked option, shows "Loading…")
+  async function loadSample(b) {
+    const sub = b.querySelector('.mo-sub'), was = sub.textContent;
     b.disabled = true; sub.textContent = 'Loading…';
     try {
       const res = await fetch(SAMPLE_LOG.url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      if (loadLog(await res.arrayBuffer(), SAMPLE_LOG.name)) setLogModal(false);
-    } catch (err) { alert(`Could not load the sample data:\n${err.message}`); }
+      return loadLog(await res.arrayBuffer(), SAMPLE_LOG.name);
+    } catch (err) { alert(`Could not load the sample data:\n${err.message}`); return false; }
     finally { b.disabled = false; sub.textContent = was; }
-  };
+  }
+  const browseLog = () => { $('logFile').value = ''; $('logFile').click(); };
+  $('logSample').onclick = async () => { if (await loadSample($('logSample'))) setLogModal(false); };
   $('logFile').onchange = async e => {
     const f = e.target.files[0];
     if (f) loadLog(await f.arrayBuffer(), f.name);
@@ -1049,6 +1079,8 @@
   window.addEventListener('scroll', fitSide, { passive: true });
 
   function sync() {
+    // Simulation: the edited map is the one of the simulated riding mode and gear
+    if (state.tab === 'sim') { simView.currentGear(); state.targetIndex = indexOf(simView.map.id); state.noSel = false; }
     // a different map starts on its μ 1.00 level
     if (state.targetIndex !== state.lastTarget) { state.muIndex = D.MU_BASE; state.lastTarget = state.targetIndex; }
     // deselecting the map goes back to the default view: every map shown (maps added to the filter are cleared)
@@ -1081,7 +1113,7 @@
     });
     $('sideCtx').hidden = !((tab === 'maps' && !top) || tab === 'user');
     // Map details (left column) for the selected map: riding-mode usage, μ levels calculation, interpolation style
-    $('mapDetails').hidden = !['modes', 'gears', 'maps'].includes(tab) || noSel();
+    $('mapDetails').hidden = !['modes', 'gears', 'maps', 'sim'].includes(tab) || noSel();
     // legend under the graph, in the selected line's colour
     $('chartLegend').hidden = !['modes', 'gears', 'maps'].includes(tab) || noSel();
     $('mdName').innerHTML = `<i class="sw" style="background:${mapColor(self.id)}"></i>Map ${self.id}`;
@@ -1099,8 +1131,13 @@
     });
     $('settingsPanel').hidden = tab !== 'settings';
     // Settings has no left column (no map list, no allocation table): full width
-    document.querySelector('.side').hidden = tab === 'settings' || tab === 'user';
-    document.querySelector('.layout').classList.toggle('no-side', tab === 'settings' || tab === 'user');
+    // no left column on Settings / +- Buttons, nor on Simulation until MoTeC data is loaded (empty state)
+    const noSide = tab === 'settings' || tab === 'user' || (tab === 'sim' && !logView.loaded);
+    document.querySelector('.side').hidden = noSide;
+    document.querySelector('.layout').classList.toggle('no-side', noSide);
+    // Simulation: left column = its selectors, the timeline / circuit map of the logged data and the map details
+    document.querySelector('.layout').classList.toggle('sim-mode', tab === 'sim');
+    $('simSide').hidden = tab !== 'sim';
     // +- Buttons: map chosen from a dropdown above the graph
     $('shiftPick').hidden = tab !== 'user';
     $('shiftMap').value = self.id;
@@ -1111,7 +1148,7 @@
     const tableOn = modes || gears || tab === 'maps';
     $('chart').hidden = tab === 'settings';
     $('tableView').hidden = !tableOn || noSel();
-    $('copyMap').hidden = $('pasteWrap').hidden = !tableOn || noSel() || top;   // riding modes / gears / maps: Import and Export only
+    $('copyMap').hidden = $('pasteWrap').hidden = !tableOn || noSel() || top || tab === 'sim';   // riding modes / gears / maps: Import and Export only
     syncPaste(self);
     [...$('reduction').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.v === D.settings.reduction));
     syncDtcMode();
@@ -1137,6 +1174,10 @@
     syncDisplay(self);
     if (tableOn) syncTable(self);
     syncPicker();
+    // Simulation: its own panel instead of the graph view
+    $('mainView').hidden = state.picker || tab === 'sim';
+    $('simPanel').hidden = tab !== 'sim';
+    if (tab === 'sim') { simView.render(); if (logView.loaded) logView._redrawSoon(); }   // its timeline / circuit map sit in the left column
     renderChart();
   }
 
