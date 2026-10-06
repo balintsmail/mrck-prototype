@@ -801,3 +801,18 @@ body.no-scroll { overflow: hidden; }
 /* Simulation: of the logged data filters only μ (no Automatically adjust) and the laps / timeline / circuit map */
 .layout.sim-mode .lp-side-body > :not(.lp-time):not(.lp-filter:has(.lp-mu)) { display: none !important; }
 .layout.sim-mode .lp-filter:has(.lp-mu) .switch { display: none; }
+/* reset icon in a label row (right-aligned): back to the default (all / nothing filtered); only shown when changed */
+.reset-btn { margin-left: auto; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+.reset-btn .material-icons { font-size: 16px; }
+.reset-btn:hover { color: var(--text); background: rgba(255, 255, 255, .08); }
+.reset-btn[hidden] { display: none; }
+.lp-read + .reset-btn { margin-left: 6px; }
+.sim-side .sim-sub { margin: 0 0 8px; }
+.sim-side .sim-sub .side-sub { margin: 0; }
+/* Simulation legend: entries hide / show their data (as the slip-target graph's legends) */
+.sim-legend-top [data-k] { cursor: pointer; user-select: none; border-radius: 3px; transition: opacity .15s; }
+.sim-legend-top [data-k]:hover { color: var(--text); }
+.sim-legend-top [data-k]:focus-visible { outline: 2px solid #3f8ce8; outline-offset: 2px; }
+.sim-legend-top [data-k].is-off { opacity: .4; text-decoration: line-through; }
+.sim-legend-top .sim-scale { margin-left: 4px; display: inline-flex; align-items: center; gap: 5px; }

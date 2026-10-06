@@ -452,12 +452,14 @@
     if (state.mapFilter.has(id)) state.mapFilter.delete(id); else state.mapFilter.add(id);
     sync();
   });
+  $('mapFilterReset').onclick = () => { state.mapFilter.clear(); sync(); };
   function syncDisplay(self) {
     $('sideShow').hidden = state.tab !== 'maps';
     $('muLevelsSw').hidden = noSel();               // μ levels belong to a selected map
     $('muLevelsSw').setAttribute('aria-checked', state.showMu);
     $('muLevelsSw').querySelector('.material-icons').textContent = state.showMu ? 'toggle_on' : 'toggle_off';
     $('sideShow').querySelector('.side-sub').textContent = state.mapFilter.size ? `Maps to show · ${state.mapFilter.size} chosen` : 'Maps to show';
+    $('mapFilterReset').hidden = !state.mapFilter.size;           // reset icon: back to all maps
     [...$('mapFilter').children].forEach(b => {
       const id = +b.dataset.id, cur = !noSel() && id === self.id;
       b.setAttribute('aria-pressed', state.mapFilter.has(id));

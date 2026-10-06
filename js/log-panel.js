@@ -54,18 +54,18 @@
     ${sw('show', 'Show logged data', 'Show the imported MoTeC data on the graph')}
     <div class="lp-info"></div>
     <div class="lp-smooth">
-      <div class="lp-sub"><span class="side-sub">Slip smoothing</span><span class="lp-read lp-smooth-read"></span></div>
+      <div class="lp-sub"><span class="side-sub">Slip smoothing</span><span class="lp-read lp-smooth-read"></span><button class="reset-btn" data-reset="smooth" title="Reset slip smoothing" aria-label="Reset slip smoothing" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
       <input type="range" class="lp-smooth-in" min="1" max="50" step="1" value="1" aria-label="Slip smoothing: samples averaged">
     </div>
     <div class="lp-side-body">
       <div class="side-h lp-filters-h">Logged data filters</div>
       <div class="lp-filter">
-        <div class="lp-sub"><span class="side-sub">Gears</span></div>
+        <div class="lp-sub"><span class="side-sub">Gears</span><button class="reset-btn" data-reset="gears" title="Reset gears" aria-label="Reset gears" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
         <div class="chip-list lp-gears" role="group" aria-label="Gears to show"></div>
         ${sw('autoGears', 'Automatically adjust', 'Filter the gears whose slip targets are selected on the graph')}
       </div>
       <div class="lp-filter">
-        <div class="lp-sub"><span class="side-sub lp-lbl-mu">μ</span><span class="lp-read lp-mu-read"></span></div>
+        <div class="lp-sub"><span class="side-sub lp-lbl-mu">μ</span><span class="lp-read lp-mu-read"></span><button class="reset-btn" data-reset="mu" title="Reset μ range" aria-label="Reset μ range" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
         <div class="lp-mu">
           <div class="lp-range">
             <div class="lp-track" style="background:${MU_GRADIENT}"></div><div class="lp-dim lp-dim-l"></div><div class="lp-dim lp-dim-r"></div>
@@ -81,10 +81,10 @@
       <section class="lp-filter lp-time" aria-label="Timeline">
         <div class="lp-sub"><span class="side-sub">Laps</span></div>
         <div class="chip-list lp-laps" role="group" aria-label="Laps"></div>
-        <div class="lp-sub lp-tl-h"><span class="side-sub">Timeline</span></div>
+        <div class="lp-sub lp-tl-h"><span class="side-sub">Timeline</span><button class="reset-btn" data-reset="time" title="Reset timeline" aria-label="Reset timeline" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
         <div class="lp-tl-box"><canvas class="lp-tl" aria-label="Timeline: click a lap, drag to select a section, drag the ends to trim"></canvas></div>
         <div class="lp-corner-row">
-          <div class="lp-sub"><span class="side-sub">Corners</span><button class="lp-link lp-c-clear" hidden>Show all</button></div>
+          <div class="lp-sub"><span class="side-sub">Corners</span><button class="reset-btn" data-reset="corners" title="Reset corners: all corners" aria-label="Reset corners: all corners" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
           <div class="lp-read lp-map-src"></div>
           <!-- track map from GPS (reference lap): corner segments (braking point to the next one), click to filter; buttons when there is no GPS -->
           <div class="lp-map-box"><svg class="lp-map" role="group" aria-label="Track map: click corners to filter by them"></svg></div>
@@ -281,7 +281,10 @@
       this.q('.lp-map-box').hidden = !this.track;
       // the track map and the corner segments are made from the best (fastest) full lap
       this.q('.lp-map-src').textContent = d.refLap ? `Best lap · ${d.refLap.name} · ${fmtLap(d.refLap.b - d.refLap.a)}` : '';
-      this.q('.lp-c-clear').hidden = !f.corners.size;
+      // reset icons: shown when a filter is not in its default state
+      const dflt = { smooth: f.smooth === 1, gears: f.autoGears, mu: !f.autoMu && f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9,
+        time: f.t0 <= 1e-6 && f.t1 >= d.duration - 1e-6, corners: !f.corners.size };
+      this.side.querySelectorAll('.reset-btn[data-reset]').forEach(b => { b.hidden = dflt[b.dataset.reset]; });
       this.q('.lp-corners').innerHTML = d.corners.length && !this.track ? `<button class="chip lp-chip" data-c="all" aria-pressed="${!f.corners.size}" style="--mc:${C.accent}">All</button>` +
         d.corners.map(c => `<button class="chip lp-chip" data-c="${c.n}" aria-pressed="${f.corners.has(c.n)}" style="--mc:${C.accent}" title="Corner ${c.n} · ${c.ranges.length} pass${c.ranges.length === 1 ? '' : 'es'} in this log" aria-label="Corner ${c.n}">C${c.n}</button>`).join('') : '';
     }
@@ -323,7 +326,13 @@
         }
         const l = e.target.closest('.lp-laps .chip');
         if (l) { this._setRange(+l.dataset.a, +l.dataset.b); return; }
-        if (e.target.closest('.lp-c-clear')) { this._set({ corners: new Set() }); return; }
+        const rs = e.target.closest('.reset-btn[data-reset]');
+        if (rs) {
+          this._set({ smooth: { smooth: 1 }, gears: { autoGears: true }, mu: { autoMu: false, muLo: MU_MIN, muHi: MU_MAX },
+            time: { t0: 0, t1: this.d.duration }, corners: { corners: new Set() } }[rs.dataset.reset]);
+          if (rs.dataset.reset === 'smooth') this.q('.lp-smooth-in').value = 1;
+          return;
+        }
         const cm = e.target.closest('.lp-map [data-c]');                  // a corner on the track map
         if (cm) {
           const corners = new Set(this.f.corners), v = +cm.dataset.c;

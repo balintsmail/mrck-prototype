@@ -91,11 +91,11 @@
   const SIDE = `
     <div class="side-h">Simulation</div>
     <div class="sim-pick">
-      <div class="side-sub">Riding mode</div>
+      <div class="lp-sub sim-sub"><span class="side-sub">Riding mode</span><button class="reset-btn" data-reset="mode" title="Reset riding mode: Dry 2" aria-label="Reset riding mode: Dry 2" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
       <div class="seg side-seg sim-modes" role="group" aria-label="Riding mode"></div>
     </div>
     <div class="sim-pick">
-      <div class="side-sub">Gears</div>
+      <div class="lp-sub sim-sub"><span class="side-sub">Gears</span><button class="reset-btn" data-reset="gear" title="Reset gears: the most used one" aria-label="Reset gears: the most used one" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
       <div class="chip-list sim-gears" role="group" aria-label="Gears to simulate"></div>
     </div>
     <div class="sim-info"></div>`;
@@ -141,6 +141,16 @@
       this.q('.sim-browse').onclick = () => opts.onBrowse();
       this.q('.sim-modes').addEventListener('click', e => { const b = e.target.closest('button[data-m]'); if (b) this.setMode(b.dataset.m); });
       this.q('.sim-gears').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b && !b.disabled) this.toggleGear(+b.dataset.g); });
+      this.side.addEventListener('click', e => {                // reset: riding mode Dry 2 / gears back to the most used one
+        const r = e.target.closest('.reset-btn[data-reset]'); if (!r) return;
+        if (r.dataset.reset === 'mode') this.setMode('Dry2');
+        else { this.autoGear = true; this.sel = new Set(); this.o.onSelect(); }
+      });
+      this.hide = new Set();                                    // legend entries switched off (top graph)
+      const lg = this.q('.sim-legend-top');
+      const toggle = el => { const k = el.dataset.k; this.hide.has(k) ? this.hide.delete(k) : this.hide.add(k); this.render(); };
+      lg.addEventListener('click', e => { const el = e.target.closest('[data-k]'); if (el) toggle(el); });
+      lg.addEventListener('keydown', e => { const el = e.target.closest('[data-k]'); if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(el); } });
       this._bindEdit();
       new ResizeObserver(() => { if (!el.hidden) this.render(); }).observe(el);
     }
@@ -218,6 +228,9 @@
     }
 
     _syncPickers() {
+      const most = this.gears.reduce((a, g) => (this.counts && this.counts[g] > this.counts[a] ? g : a), this.gears[0]);
+      this.q('.reset-btn[data-reset="mode"]').hidden = this.mode === 'Dry2';
+      this.q('.reset-btn[data-reset="gear"]').hidden = this.sel.size === 1 && this.sel.has(most);
       this.q('.sim-modes').innerHTML = this.o.modes.map(([k, name]) =>
         `<button data-m="${k}" aria-pressed="${k === this.mode}">${name}</button>`).join('');
       this.q('.sim-gears').innerHTML = [1, 2, 3, 4, 5, 6].map(g => {
@@ -296,18 +309,21 @@
       // ---- top: logged slip coloured by μ, the map as on the first three tabs (selected map), the target at the logged μ ----
       const mc = this.o.colorFor(t.id);                            // the map's own colour
       const c = this.top.begin(440, SLIP_Y), g = this.top.g;
+      const H = k => this.hide.has(k);
       c.globalAlpha = 0.6;
-      all.forEach(i => { c.fillStyle = col(d.mu[i]); c.fillRect(g.px(x(i)) - 1, g.py(d.slip[i]) - 1, 2, 2); });
+      if (!H('dots')) all.forEach(i => { c.fillStyle = col(d.mu[i]); c.fillRect(g.px(x(i)) - 1, g.py(d.slip[i]) - 1, 2, 2); });
       c.globalAlpha = 1;
       const rowPath = r => { c.beginPath(); t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[r][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); }); };
       const top = t.rows.length - 1;                               // μ band: 10 % of the map colour between the lowest and highest level
-      c.beginPath();
-      t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[top][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); });
-      for (let j = t.lean.length - 1; j >= 0; j--) c.lineTo(g.px(t.lean[j]), g.py(t.rows[0][j]));
-      c.closePath(); c.fillStyle = mc; c.globalAlpha = 0.1; c.fill(); c.globalAlpha = 1;
+      if (!H('mu')) {
+        c.beginPath();
+        t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[top][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); });
+        for (let j = t.lean.length - 1; j >= 0; j--) c.lineTo(g.px(t.lean[j]), g.py(t.rows[0][j]));
+        c.closePath(); c.fillStyle = mc; c.globalAlpha = 0.1; c.fill(); c.globalAlpha = 1;
+      }
       const rowsEd = muRows.map((m, r) => r).filter(r => !locked.includes(r));
       muRows.forEach((m, r) => {                                   // other levels: calculated dotted, editable solid with points
-        if (r === mi) return;
+        if (r === mi || H('mu')) return;
         rowPath(r); c.strokeStyle = mc;
         if (locked.includes(r)) { c.lineWidth = 1.5; c.setLineDash([4, 8]); } else { c.lineWidth = 1; c.setLineDash([]); }
         c.stroke(); c.setLineDash([]);
@@ -316,47 +332,49 @@
           c.fillStyle = '#0c0c12'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = mc; c.stroke();
         });
       });
-      others.forEach(o => {                                        // other selected gears' maps: their selected μ level, thin
+      if (!H('map')) others.forEach(o => {                         // other selected gears' maps: their selected μ level, thin
         c.beginPath(); o.t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(o.t.rows[mi][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); });
         c.strokeStyle = this.o.colorFor(o.id); c.lineWidth = 1.5; c.stroke();
       });
       runs.forEach(run => {                                        // the target at the logged μ, per pass: plain 4px white
-        if (run.length < 2) return;
+        if (run.length < 2 || H('tgt')) return;
         const tr = d.gear ? this.o.mapFor(this.mode, Math.round(d.gear[run[0]])) : t;   // each pass with its gear's map
         c.beginPath();
         run.forEach((i, k) => { const X = g.px(x(i)), Y = g.py(targetAt(tr, muRows, x(i), d.mu[i])); k ? c.lineTo(X, Y) : c.moveTo(X, Y); });
         c.lineJoin = 'round'; c.lineCap = 'round'; c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.stroke();
       });
-      rowPath(mi); c.strokeStyle = mc; c.lineWidth = 3.5; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke();   // the selected level, on top
-      if (editable) t.lean.forEach((lx, j) => {                   // its points: white with a map-colour ring
+      if (!H('map')) { rowPath(mi); c.strokeStyle = mc; c.lineWidth = 3.5; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke(); }   // the selected level, on top
+      if (editable && !H('map')) t.lean.forEach((lx, j) => {     // its points: white with a map-colour ring
         c.beginPath(); c.arc(g.px(lx), g.py(t.rows[mi][j]), 5, 0, Math.PI * 2); c.fillStyle = '#ffffff'; c.fill(); c.lineWidth = 2; c.strokeStyle = mc; c.stroke();
       });
       this.top.end();
       c.font = "700 11px 'Noto Sans', system-ui, sans-serif"; c.fillStyle = '#ffffff'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      t.lean.forEach((lx, j) => {                                  // its values above the points (outside the clip: the end points too)
+      if (!H('map')) t.lean.forEach((lx, j) => {                  // its values above the points (outside the clip: the end points too)
         const X = g.px(lx), Y = g.py(t.rows[mi][j]);
         c.fillText(t.rows[mi][j].toFixed(1) + '%', X, Y - 22 < g.y0 - 8 ? Y + 22 : Y - 22);
       });
       // right-hand labels: the selected and the editable levels boxed in the map colour, calculated ones as text
       const BOX_H = 17, labs = muRows.map((m, r) => ({ m, r, text: 'μ ' + fmtMu(m), color: mc, boxed: !locked.includes(r) || r === mi, y: g.py(t.rows[r][t.rows[r].length - 1]) }))
         .concat(others.map(o => ({ r: -1, text: `M${o.id} #${o.gg}`, color: this.o.colorFor(o.id), boxed: false, y: g.py(o.t.rows[mi][o.t.rows[mi].length - 1]) })))
+        .filter(l => (l.r === mi || l.r < 0 ? !H('map') : !H('mu')))   // labels follow what is shown
         .sort((a, b) => a.y - b.y);
       const gap = BOX_H + 2;
       for (let k = 1; k < labs.length; k++) if (labs[k].y - labs[k - 1].y < gap) labs[k].y = labs[k - 1].y + gap;
       for (let k = labs.length - 1; k >= 0; k--) { const max = k === labs.length - 1 ? g.y1 : labs[k + 1].y - gap; if (labs[k].y > max) labs[k].y = max; }
       labs.forEach(l => this.top.rightLabel(l.text, l.y, l.color, l.boxed, BOX_H));
-      this.hit = { t, mi, g, editable, rowsEd, labels: labs };
+      const rowsHit = rowsEd.filter(r => (r === mi ? !H('map') : !H('mu')));   // hidden levels cannot be dragged
+      this.hit = { t, mi, g, editable, rowsEd: rowsHit, labels: labs };
+      // legend: each entry hides / shows its data on the graph (as the slip-target graph's legends)
+      const item = (k, html) => `<span data-k="${k}" role="button" tabindex="0" class="${H(k) ? 'is-off' : ''}" aria-pressed="${!H(k)}" title="Click to hide / show">${html}</span>`;
       this.q('.sim-legend-top').innerHTML =
-        `<span><i class="sim-sw sim-sw-dots"></i>Logged slip, coloured by μ</span>` +
-        `<span class="sim-scale"><span>μ ${fmtMu(LogPanel.MU_RANGE[0])}</span><i></i><span>${fmtMu(LogPanel.MU_RANGE[1])}</span></span>` +
-        `<span><i class="sim-sw sim-sw-map" style="border-color:${mc}"></i>Map ${t.id} at μ ${fmtMu(muRows[mi])}</span>` +
-        `<span><i class="sim-sw sim-sw-mu" style="border-color:${mc}"></i>Other μ levels (click a label to select)</span>` +
-        `<span><i class="sim-sw sim-sw-tgt"></i>Slip target at the logged μ</span>`;
+        item('dots', `<i class="sim-sw sim-sw-dots"></i>Logged slip, coloured by μ <span class="sim-scale"><span>${fmtMu(LogPanel.MU_RANGE[0])}</span><i></i><span>${fmtMu(LogPanel.MU_RANGE[1])}</span></span>`) +
+        item('map', `<i class="sim-sw sim-sw-map" style="border-color:${mc}"></i>Map ${t.id} at μ ${fmtMu(muRows[mi])}`) +
+        item('mu', `<i class="sim-sw sim-sw-mu" style="border-color:${mc}"></i>Other μ levels`) +
+        item('tgt', `<i class="sim-sw sim-sw-tgt"></i>Slip target at the logged μ`);
 
       // ---- μ classes of 0.2 from 0 to 1.6; below 0 one class (-1), from 1.6 up another (8) ----
       const binOf = m => clamp(Math.floor(m / MU_STEP + 1e-9), -1, 8);
       const binMid = k => (k < 0 ? -0.1 : k > 7 ? 1.7 : (k + 0.5) * MU_STEP);
-      const binName = k => (k < 0 ? 'μ < 0' : k > 7 ? 'μ ≥ 1.60' : `μ ${fmtMu(k * MU_STEP)}–${fmtMu((k + 1) * MU_STEP)}`);
       const bins = new Map();
       all.forEach(i => { const k = binOf(d.mu[i]); if (!bins.has(k)) bins.set(k, []); bins.get(k).push(i); });
       const keys = [...bins.keys()].sort((a, b) => a - b);
