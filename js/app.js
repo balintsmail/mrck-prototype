@@ -224,7 +224,7 @@
   const US = D.userShift, STEPS = D.SHIFT_STEPS;
   const SHIFT = {
     fac: { name: 'User Factor [-]', dec: 2, step: 'facStep', fill: (k, v) => 1 - k * v, slider: 'shiftFac', txt: 'shiftFacTxt' },
-    off: { name: 'User Offset [%]', dec: 1, step: 'offStep', fill: (k, v) => -k * v, slider: 'shiftOff', txt: 'shiftOffTxt' },
+    off: { name: 'User Offset [%]', dec: 1, q: 0.1, step: 'offStep', fill: (k, v) => -k * v, slider: 'shiftOff', txt: 'shiftOffTxt' },
   };
   const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
   const fmtN = (v, d) => round(v, d).toFixed(d);
@@ -261,7 +261,7 @@
   }
   Object.entries(SHIFT).forEach(([kind, S]) => {
     $(S.slider).addEventListener('input', () => fillShift(kind, +$(S.slider).value));
-    $(S.txt).addEventListener('input', () => { const v = parseFloat($(S.txt).value.replace(',', '.')); if (Number.isFinite(v)) fillShift(kind, v); });
+    $(S.txt).addEventListener('input', () => { const v = parseFloat($(S.txt).value.replace(',', '.')); if (Number.isFinite(v)) fillShift(kind, S.q ? round(Math.round(v / S.q) * S.q, 3) : v); });   // offset: 0.1 % steps
     $(S.txt).addEventListener('blur', () => { $(S.txt).value = fmtStep(US[S.step]); });
   });
 
