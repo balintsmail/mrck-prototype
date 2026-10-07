@@ -511,6 +511,7 @@
     },
   });
   $('simSide').appendChild(simView.side);
+  $('userSide').appendChild($('shiftPick'));              // +- Buttons: example map + factor / offset per level in the left column
   // ↑ / ↓ gear, ← / → corner, unless a field, list or dialog has the keys
   document.addEventListener('keydown', e => {
     if (state.tab !== 'sim' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !$('logModal').hidden) return;
@@ -1116,7 +1117,7 @@
       b.setAttribute('aria-selected', gi === state.cell.gear);
       b.querySelector('.pk-use').textContent = D.VEHICLE_MODES.map(m => `${MODE_NAMES[m]} M${D.allocation[m][gi]}`).join(' · ');
     });
-    $('sideCtx').hidden = !((tab === 'maps' && !top) || tab === 'user');
+    $('sideCtx').hidden = !(tab === 'maps' && !top);
     // Map details (left column) for the selected map: riding-mode usage, μ levels calculation, interpolation style
     $('mapDetails').hidden = !['modes', 'gears', 'maps', 'sim'].includes(tab) || noSel();
     // legend under the graph, in the selected line's colour
@@ -1137,7 +1138,10 @@
     $('settingsPanel').hidden = tab !== 'settings';
     // Settings has no left column (no map list, no allocation table): full width
     // no left column on Settings / +- Buttons, nor on Simulation until MoTeC data is loaded (empty state)
-    const noSide = tab === 'settings' || tab === 'user' || (tab === 'sim' && !logView.loaded);
+    const noSide = tab === 'settings' || (tab === 'sim' && !logView.loaded);
+    // +- Buttons: left column = example map + factor / offset per level, then the logged data adjusters
+    document.querySelector('.layout').classList.toggle('user-mode', tab === 'user');
+    $('userSide').hidden = tab !== 'user';
     document.querySelector('.side').hidden = noSide;
     document.querySelector('.layout').classList.toggle('no-side', noSide);
     // Simulation: left column = its selectors, the timeline / circuit map of the logged data and the map details
@@ -1168,9 +1172,8 @@
     $('logName').textContent = logged ? state.logName : 'Add MOTEC data';
     $('log').title = logged ? 'Import another log file' : '';
     $('logClear').hidden = !logged || tab === 'settings';    // log adjusters: in the left column; at the top of the log panel on tabs without one (+- Buttons)
-    if (tab === 'user') { if (logView.side.parentNode !== $('logPanel')) $('logPanel').prepend(logView.side); }
-    else if (logView.side.parentNode !== $('sideLog')) $('sideLog').appendChild(logView.side);
-    logView.setContext({ visible: tab !== 'settings', gears: graphGears(), muBand: graphMuBand() });
+    if (logView.side.parentNode !== $('sideLog')) $('sideLog').appendChild(logView.side);   // log adjusters: always in the left column
+    logView.setContext({ visible: tab !== 'settings', gears: graphGears(), muBand: graphMuBand(), gearsAll: tab === 'maps' || tab === 'user' });
 
     syncChartTitle(self);
     syncHistory();

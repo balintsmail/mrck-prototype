@@ -75,6 +75,8 @@
   <aside class="side" aria-label="Slip target allocation">
     <!-- Simulation tab: gear / corner selectors (sim-view.js) -->
     <div id="simSide"></div>
+    <!-- +- Buttons tab: example map and the factor / offset per level (#shiftPick is moved in here) -->
+    <section class="side-block user-side" id="userSide" hidden aria-label="+- buttons"><div class="side-h">+- buttons</div></section>
     <!-- Contextual: map selector for the All slip target maps / User offset views -->
     <div class="side-tabs" id="sideCtx" hidden>
       <div class="picker-list ctx-list" id="mapList" role="listbox" aria-label="Slip target maps"></div>
@@ -189,6 +191,18 @@
     </div>
   </div>
   <div class="chart" id="chart"></div>
+
+  <!-- the map's data table: right after the graph (Riding modes, Gears, All slip target maps) -->
+  <section class="table-view" id="tableView" hidden aria-label="Map table">
+    <div class="mu-scroll"><table id="mapTbl"></table></div>
+    <p class="alloc-msg" id="tvMsg" aria-live="polite"></p>
+  </section>
+
+  <!-- +- Buttons: rider slip shift (user levels -7..+7), shown under the graph -->
+  <section class="panel shift-panel" id="shiftPanel" hidden aria-label="+- buttons">
+    <div class="mu-scroll"><table id="shiftTbl"></table></div>
+    <p class="alloc-msg" id="shiftMsg" aria-live="polite"></p>
+  </section>
   <!-- +- Buttons: per-level sliders (left) and the example map (right), below the graph -->
   <div class="shift-top" id="shiftPick" hidden>
     <div class="mu-grid shift-fill">
@@ -203,15 +217,6 @@
   </div>
   <!-- Imported MoTeC log: show / hide, DTC torque reduction graph, gear / μ filters, lap / corner timeline (log-panel.js) -->
   <section class="log-panel" id="logPanel" hidden aria-label="Logged data"></section>
-  <!-- +- Buttons: rider slip shift (user levels -7..+7), shown under the graph -->
-  <section class="panel shift-panel" id="shiftPanel" hidden aria-label="+- buttons">
-    <div class="mu-scroll"><table id="shiftTbl"></table></div>
-    <p class="alloc-msg" id="shiftMsg" aria-live="polite"></p>
-  </section>
-  <section class="table-view" id="tableView" hidden aria-label="Map table">
-    <div class="mu-scroll"><table id="mapTbl"></table></div>
-    <p class="alloc-msg" id="tvMsg" aria-live="polite"></p>
-  </section>
   </div>
   </main>
   </div>

@@ -2,22 +2,20 @@
 // MoTeC log, for one riding mode and gear (the slip target map the allocation gives them).
 //  - left column (this.side, docked by app.js): riding mode and gear selectors (dropdown + ‹ ›; ← / → = riding
 //    mode, ↑ / ↓ = gear). The timeline and the circuit map (corners) are the logged data's own filters (log-panel.js).
-//  - top graph: logged slip over |lean| coloured by μ (dark blue -> red), the map's μ levels as thin lines, a thick
+//  - the graph: logged slip over |lean| coloured by μ (dark blue -> red; 4px points joined per pass), the map drawn as on
+//    the other tabs (selected map), a 4px
 //    white line where the target is at the μ logged at each sample (interpolated between the μ levels). Editable
 //    μ levels show their target points, which can be dragged as on the other tabs (the dragged level becomes the
 //    selected one, drawn bold); calculated levels are dashed. A μ label on the right selects that level.
-//  - μ-class graphs: the samples split into 0.2 wide μ classes, each in its colour, points and the median per 1° of
-//    lean — logged slip, and the longitudinal acceleration (accx_veh) as a duplicate. The μ range slider of the logged
-//    data (left column) filters every graph on the tab.
-// The graphs share the slip-target graph's lean axis (70° -> 0° left to right).
+//  The μ range slider, timeline and circuit map of the logged data (left column) filter what is shown.
+// The graph uses the slip-target graph's lean axis (70° -> 0° left to right).
 (function () {
-  const X_MAX = 70, MU_STEP = 0.2, MIN_PER_DEG = 5, SLIP_MAX = 25.5;
+  const X_MAX = 70, SLIP_MAX = 25.5;
   const FONT = "700 10px 'Noto Sans', system-ui, sans-serif";
   const fmtMu = m => m.toFixed(2);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const r1 = v => Math.round(v * 10) / 10;
   const SLIP_Y = { min: 0, max: 20, major: 1, label: 2, fmt: v => v + '%', minor: 0.2 };
-  const ACC_Y = { min: -1, max: 1.5, major: 0.25, label: 0.5, fmt: v => v.toFixed(1) + ' G', minor: 0.05 };
 
   // Slip target of a map (lean descending) at |lean| x and μ m: linear in lean along each μ level, then
   // linear between the two μ levels around m (clamped to the lowest / highest level), as the ECU interpolates.
@@ -99,7 +97,6 @@
       <div class="chip-list sim-gears" role="group" aria-label="Gears to simulate"></div>
     </div>
     <div class="sim-info"></div>`;
-  const CLASSES_SUB = 'points and the median per 1° of lean';
   const TEMPLATE = `
     <div class="sim-empty" hidden>
       <span class="material-icons sim-empty-ic" aria-hidden="true">insights</span>
@@ -114,10 +111,6 @@
       <div class="sim-h">Slip target at the logged <span class="lc">μ</span> <span class="sim-h-sub sim-h-top"></span></div>
       <div class="sim-legend sim-legend-top"></div>
       <div class="sim-plot"><canvas class="sim-top" role="img"></canvas></div>
-      <div class="sim-h">Logged slip by <span class="lc">μ</span> class <span class="sim-h-sub">0.2 μ steps · ${CLASSES_SUB}</span></div>
-      <div class="sim-plot"><canvas class="sim-bot" role="img"></canvas></div>
-      <div class="sim-h">Acceleration by <span class="lc">μ</span> class <span class="sim-h-sub">accx_veh [G] · ${CLASSES_SUB}</span></div>
-      <div class="sim-plot"><canvas class="sim-acc" role="img"></canvas></div>
     </div>`;
 
   class SimView {
@@ -135,8 +128,6 @@
       this.side.innerHTML = SIDE;
       this.q = s => el.querySelector(s) || this.side.querySelector(s);
       this.top = new Plot(this.q('.sim-top'));
-      this.bot = new Plot(this.q('.sim-bot'));
-      this.acc = new Plot(this.q('.sim-acc'));
       this.q('.sim-sample').onclick = e => opts.onSample(e.currentTarget);   // empty state: the same two options as Add MOTEC data
       this.q('.sim-browse').onclick = () => opts.onBrowse();
       this.q('.sim-modes').addEventListener('click', e => { const b = e.target.closest('button[data-m]'); if (b) this.setMode(b.dataset.m); });
@@ -153,6 +144,7 @@
       lg.addEventListener('keydown', e => { const el = e.target.closest('[data-k]'); if (el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(el); } });
       this._bindEdit();
       new ResizeObserver(() => { if (!el.hidden) this.render(); }).observe(el);
+      window.addEventListener('resize', () => { if (!el.hidden) this.render(); });   // the graph follows the window height
     }
     // the corner shown: picked on the circuit map (0 = all; -1 = several)
     get corner() { const s = this.o.filters().corners; return s.size === 0 ? 0 : s.size === 1 ? [...s][0] : -1; }
@@ -308,10 +300,19 @@
 
       // ---- top: logged slip coloured by μ, the map as on the first three tabs (selected map), the target at the logged μ ----
       const mc = this.o.colorFor(t.id);                            // the map's own colour
-      const c = this.top.begin(440, SLIP_Y), g = this.top.g;
+      // the graph fills the window height below its title and legend (at least 320px)
+      const topH = Math.max(320, Math.round(window.innerHeight - (this.q('.sim-top').parentNode.getBoundingClientRect().top + window.scrollY) - 16));
+      const c = this.top.begin(topH, SLIP_Y), g = this.top.g;
       const H = k => this.hide.has(k);
       c.globalAlpha = 0.6;
-      if (!H('dots')) all.forEach(i => { c.fillStyle = col(d.mu[i]); c.fillRect(g.px(x(i)) - 1, g.py(d.slip[i]) - 1, 2, 2); });
+      if (!H('dots')) {                                            // logged slip: consecutive samples joined (μ colour), 4px points
+        c.lineWidth = 1; c.lineJoin = 'round';
+        runs.forEach(run => { for (let k = 1; k < run.length; k++) {
+          const a = run[k - 1], b = run[k];
+          c.strokeStyle = col(d.mu[b]); c.beginPath(); c.moveTo(g.px(x(a)), g.py(d.slip[a])); c.lineTo(g.px(x(b)), g.py(d.slip[b])); c.stroke();
+        } });
+        all.forEach(i => { c.fillStyle = col(d.mu[i]); c.fillRect(g.px(x(i)) - 2, g.py(d.slip[i]) - 2, 4, 4); });
+      }
       c.globalAlpha = 1;
       const rowPath = r => { c.beginPath(); t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[r][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); }); };
       const top = t.rows.length - 1;                               // μ band: 10 % of the map colour between the lowest and highest level
@@ -372,39 +373,8 @@
         item('mu', `<i class="sim-sw sim-sw-mu" style="border-color:${mc}"></i>Other μ levels`) +
         item('tgt', `<i class="sim-sw sim-sw-tgt"></i>Slip target at the logged μ`);
 
-      // ---- μ classes of 0.2 from 0 to 1.6; below 0 one class (-1), from 1.6 up another (8) ----
-      const binOf = m => clamp(Math.floor(m / MU_STEP + 1e-9), -1, 8);
-      const binMid = k => (k < 0 ? -0.1 : k > 7 ? 1.7 : (k + 0.5) * MU_STEP);
-      const bins = new Map();
-      all.forEach(i => { const k = binOf(d.mu[i]); if (!bins.has(k)) bins.set(k, []); bins.get(k).push(i); });
-      const keys = [...bins.keys()].sort((a, b) => a - b);
-      const classes = (plot, h, Y, val) => {
-        const cx = plot.begin(h, Y), gx = plot.g;
-        keys.forEach(k => {
-          cx.fillStyle = col(binMid(k)); cx.globalAlpha = 0.22;
-          bins.get(k).forEach(i => { const v = val(i); if (Number.isFinite(v)) cx.fillRect(gx.px(x(i)) - 1, gx.py(v) - 1, 2, 2); });
-        });
-        cx.globalAlpha = 1;
-        keys.forEach(k => {                                       // median per 1° of lean
-          const per = Array.from({ length: X_MAX + 1 }, () => []);
-          bins.get(k).forEach(i => { const b = Math.round(x(i)), v = val(i); if (b <= X_MAX && Number.isFinite(v)) per[b].push(v); });
-          const pts = [];
-          per.forEach((v, b) => { if (v.length >= MIN_PER_DEG) { v.sort((p, q) => p - q); pts.push([b, v[v.length >> 1]]); } });
-          if (pts.length < 2) return;
-          cx.strokeStyle = col(binMid(k)); cx.lineWidth = 2.5; cx.lineJoin = 'round'; cx.beginPath();
-          pts.forEach(([b, v], j) => { const X = gx.px(b), Y = gx.py(v); j ? cx.lineTo(X, Y) : cx.moveTo(X, Y); });
-          cx.stroke();
-        });
-        plot.end();
-      };
-      classes(this.bot, 360, SLIP_Y, i => d.slip[i]);
-      if (d.accx) classes(this.acc, 360, ACC_Y, i => d.accx[i]);
-      this.q('.sim-acc').closest('.sim-plot').previousElementSibling.querySelector('.sim-h-sub').textContent =
-        d.accx ? `accx_veh [G] · ${CLASSES_SUB}` : 'not in this log (no accx_veh channel)';
       const what = `gear ${selG.join(', ')}, ${corner > 0 ? 'corner ' + corner : 'all corners'}`;
       this.q('.sim-top').setAttribute('aria-label', `Logged slip over lean angle, ${what}, with the slip target of map ${t.id} at the logged μ`);
-      this.q('.sim-bot').setAttribute('aria-label', `Logged slip over lean angle by μ class, ${what}`);
-      this.q('.sim-acc').setAttribute('aria-label', `Longitudinal acceleration over lean angle by μ class, ${what}`);
     }
   }
 

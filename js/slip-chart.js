@@ -443,7 +443,7 @@
       const key = [g.W, g.H, g.yMax, H.logSlip, H.logTgt, H.accel].join('|');
       if (this._logKey === key && this._logSrc === this.o.log) return this._logSvg;
       const f = n => Math.round(n * 10) / 10;
-      const r = 1.1 * g.s;
+      const r = 2.2 * g.s;                                        // logged slip markers (2x)
       const { traces = [], target = [] } = this.o.log;
       const count = traces.reduce((a, tr) => a + tr.length, 0);
       const every = Math.max(1, Math.ceil(count / 8000));        // x markers thinned out on very long selections

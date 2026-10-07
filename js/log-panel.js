@@ -158,7 +158,15 @@
     }
 
     // ctx: { visible, gears: [1..6] selected on the graph, muBand: [lo, hi] of the selected μ level }
-    setContext(ctx) { this.ctx = Object.assign({}, this.ctx, ctx); this.update(); }
+    // ctx.gearsAll: the tab's default for the gear filter — true: Automatically adjust off and no gear picked (every gear
+    // shown; +- Buttons, All slip target maps), false: Automatically adjust on. Applied when the tab changes.
+    setContext(ctx) {
+      const prev = this.ctx.gearsAll;
+      this.ctx = Object.assign({}, this.ctx, ctx);
+      if (ctx.gearsAll !== undefined && ctx.gearsAll !== prev) Object.assign(this.f, this._gearDefault());
+      this.update();
+    }
+    _gearDefault() { return this.ctx.gearsAll ? { autoGears: false, gears: new Set() } : { autoGears: true }; }
 
     update() {
       const f = this.f, d = this.d;
@@ -210,7 +218,7 @@
       }
       const traces = [], target = [], reduction = [];
       const bins = accx ? Array.from({ length: ACC_BINS }, () => []) : null;   // positive acceleration per slip band
-      const xSlip = d.slipF2 || slip, av = { x: [], y: [], mu: [] }, avBins = Array.from({ length: ACC_BINS }, () => []);
+      const xSlip = d.slipF2 || slip, av = { x: [], y: [], mu: [], i: [] }, avBins = Array.from({ length: ACC_BINS }, () => []);
       let tr = null, tg = null, rd = null, shown = 0;
       for (let i = i0; i <= i1; i++) {
         const ok = (!inCorner || inCorner[i]) && (!gear || !f.gears.size || f.gears.has(gear[i])) && mu[i] >= lo && mu[i] <= hi;
@@ -223,7 +231,7 @@
         if (accx && ok && accx[i] > 0) {
           const sx = xSlip[i];
           if (Number.isFinite(sx) && sx >= AV_XMIN) {
-            av.x.push(sx); av.y.push(accx[i]); av.mu.push(mu[i]);
+            av.x.push(sx); av.y.push(accx[i]); av.mu.push(mu[i]); av.i.push(i);
             const b = Math.floor(sx / ACC_BIN); if (sx >= 0 && b < ACC_BINS) avBins[b].push(accx[i]);
           }
         }
@@ -282,7 +290,7 @@
       // the track map and the corner segments are made from the best (fastest) full lap
       this.q('.lp-map-src').textContent = d.refLap ? `Best lap · ${d.refLap.name} · ${fmtLap(d.refLap.b - d.refLap.a)}` : '';
       // reset icons: shown when a filter is not in its default state
-      const dflt = { smooth: f.smooth === 1, gears: f.autoGears, mu: !f.autoMu && f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9,
+      const dflt = { smooth: f.smooth === 1, gears: this.ctx.gearsAll ? !f.autoGears && !f.gears.size : f.autoGears, mu: !f.autoMu && f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9,
         time: f.t0 <= 1e-6 && f.t1 >= d.duration - 1e-6, corners: !f.corners.size };
       this.side.querySelectorAll('.reset-btn[data-reset]').forEach(b => { b.hidden = dflt[b.dataset.reset]; });
       this.q('.lp-corners').innerHTML = d.corners.length && !this.track ? `<button class="chip lp-chip" data-c="all" aria-pressed="${!f.corners.size}" style="--mc:${C.accent}">All</button>` +
@@ -328,7 +336,7 @@
         if (l) { this._setRange(+l.dataset.a, +l.dataset.b); return; }
         const rs = e.target.closest('.reset-btn[data-reset]');
         if (rs) {
-          this._set({ smooth: { smooth: 1 }, gears: { autoGears: true }, mu: { autoMu: false, muLo: MU_MIN, muHi: MU_MAX },
+          this._set({ smooth: { smooth: 1 }, gears: this._gearDefault(), mu: { autoMu: false, muLo: MU_MIN, muHi: MU_MAX },
             time: { t0: 0, t1: this.d.duration }, corners: { corners: new Set() } }[rs.dataset.reset]);
           if (rs.dataset.reset === 'smooth') this.q('.lp-smooth-in').value = 1;
           return;
@@ -510,14 +518,21 @@
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       for (let v = 0; v <= xMax; v += 2) ctx.fillText(`${v}%`, px(v), y1 + 8 * s);
       if (!av || !this.f.show) return;
-      // dots, grouped by colour
+      // consecutive samples joined by a line in the μ colour, then 4px dots, grouped by colour
       ctx.globalAlpha = 0.55;
       const byBin = MU_LUT.map(() => []);
       for (let i = 0; i < av.x.length; i++) if (av.x[i] <= xMax) byBin[muBin(av.mu[i])].push(i);
+      ctx.lineWidth = 1;
+      byBin.forEach((idx, b) => {
+        if (!idx.length) return;
+        ctx.strokeStyle = MU_LUT[b]; ctx.beginPath();
+        idx.forEach(i => { if (i && av.i[i] - av.i[i - 1] === 1 && av.x[i - 1] <= xMax) { ctx.moveTo(px(av.x[i - 1]), py(av.y[i - 1])); ctx.lineTo(px(av.x[i]), py(av.y[i])); } });
+        ctx.stroke();
+      });
       byBin.forEach((idx, b) => {
         if (!idx.length) return;
         ctx.fillStyle = MU_LUT[b];
-        idx.forEach(i => ctx.fillRect(px(av.x[i]) - 1, py(av.y[i]) - 1, 2, 2));
+        idx.forEach(i => ctx.fillRect(px(av.x[i]) - 2, py(av.y[i]) - 2, 4, 4));
       });
       ctx.globalAlpha = 1;
       // 90th percentile line + peak
