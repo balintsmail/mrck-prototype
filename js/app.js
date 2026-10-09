@@ -55,8 +55,17 @@
     return `Map ${t.id}`;
   }
   function record(entry) { undo.push(Object.assign({ time: Date.now() }, entry)); redo.length = 0; syncHistory(); }
+  // Visitor log (track.js): the current tab name goes with every event
+  const track = (kind, detail) => {
+    if (!window.MRCK_TRACK) return;
+    const tb = document.querySelector('.tabs [role="tab"][aria-selected="true"]');
+    window.MRCK_TRACK(kind, tb ? tb.textContent.trim() : null, detail);
+  };
+  const editedMaps = new Set();                // the first edit of each map per visit is logged
   function pushUndo(desc) {
-    record({ label: where(), desc: `Map ${D.targets[state.targetIndex].id} · ${desc || 'slip target edited'}`, map: state.targetIndex, json: snapshot() });
+    const id = D.targets[state.targetIndex].id;
+    if (!editedMaps.has(id)) { editedMaps.add(id); track('action', `Edit map ${id}`); }
+    record({ label: where(), desc: `Map ${id} · ${desc || 'slip target edited'}`, map: state.targetIndex, json: snapshot() });
   }
   function pushAllocUndo(label, desc) { record({ label, desc, alloc: JSON.stringify(D.allocation) }); }
 
@@ -175,6 +184,7 @@
       if (state.tab === 'gears') state.cell = { mode: state.cell.mode, gear: state.memGear ?? 1 };
       if (state.tab === 'user') state.targetIndex = indexOf(D.allocation.Dry1[1]);   // +- Buttons: the map of Dry 1 #2
       sync();
+      track('tab');
     };
   });
 
@@ -549,7 +559,9 @@
     try {
       const res = await fetch(SAMPLE_LOG.url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return loadLog(await res.arrayBuffer(), SAMPLE_LOG.name);
+      const ok = loadLog(await res.arrayBuffer(), SAMPLE_LOG.name);
+      if (ok) track('action', 'Load sample data');
+      return ok;
     } catch (err) { alert(`Could not load the sample data:\n${err.message}`); return false; }
     finally { b.disabled = false; sub.textContent = was; }
   }
@@ -557,9 +569,9 @@
   $('logSample').onclick = async () => { if (await loadSample($('logSample'))) setLogModal(false); };
   $('logFile').onchange = async e => {
     const f = e.target.files[0];
-    if (f) loadLog(await f.arrayBuffer(), f.name);
+    if (f && loadLog(await f.arrayBuffer(), f.name)) track('action', 'Open own MoTeC log');
   };
-  $('logClear').onclick = () => { state.logName = null; logView.clear(); sync(); };
+  $('logClear').onclick = () => { state.logName = null; logView.clear(); sync(); track('action', 'Remove MoTeC log'); };
 
   // What the graph shows, for the log filters' "Automatically adjust":
   // gears (1..6) whose slip targets are selected, and the μ range of the selected μ level (half-way to its neighbours).
@@ -612,6 +624,7 @@
   // Export writes into the last imported file (everything outside traction control stays as in it), else into EXPORT_BASE.
   let imported = null;
   $('exportMrck').onclick = async () => {
+    track('action', 'Export MRCK');
     try {
       if (imported) { exportFile(imported.xml, imported.name); return; }
       const res = await fetch(EXPORT_BASE, { cache: 'no-cache' });
@@ -638,6 +651,7 @@
       if (data.targets.length !== D.targets.length) throw new Error(`it has ${data.targets.length} slip target maps, the prototype ${D.targets.length}`);
     } catch (err) { alert(`Import MRCK: could not read ${f.name}:\n${err.message}`); return; }
     if ((undo.length || redo.length) && !confirm(`Replace the traction control settings with ${f.name}?\nThe current changes and their history are discarded.`)) return;
+    track('action', 'Import MRCK');
     const changed = [];
     data.targets.forEach(t => {
       t.mu = { mode: 'uniform', deg: 0, ptDeg: [] };
