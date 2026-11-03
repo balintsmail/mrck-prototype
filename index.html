@@ -21,6 +21,11 @@
       <span class="appbar-by">By Balint Fekete</span>
     </div>
     <div class="spacer"></div>
+    <!-- RCK variant: STK = a slip target map per gear, PRO = per track sector (track detection) -->
+    <div class="seg variant-seg" id="variant" role="group" aria-label="RCK variant">
+      <button data-v="stk" aria-pressed="true" title="STK: allocate the slip target maps to gears">STK</button>
+      <button data-v="pro" aria-pressed="false" title="PRO: split the track into sectors and allocate the maps to sectors">PRO</button>
+    </div>
     <div class="hist-ctl" role="group" aria-label="History">
       <button id="undo" class="icon-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><span class="material-icons" aria-hidden="true">undo</span></button>
       <button id="histBtn" class="icon-btn" title="Show changes" aria-label="Show changes" aria-expanded="false" aria-controls="history"><span class="material-icons" aria-hidden="true">expand_more</span></button>
@@ -47,6 +52,7 @@
     <button role="tab" id="tabMaps" data-tab="maps" data-nav="top" aria-controls="chart">All slip target maps</button>
     <button role="tab" id="tabUser" data-tab="user" aria-controls="shiftPanel">+- Buttons</button>
     <button role="tab" id="tabSim" data-tab="sim" aria-controls="simPanel">Simulation</button>
+    <button role="tab" id="tabTrack" data-tab="track" aria-controls="trackPanel" hidden>Track detection</button>
     <button role="tab" id="tabSettings" data-tab="settings" aria-controls="settingsPanel">Settings</button>
   </div>
     <div class="group view-actions" id="viewActions">
@@ -156,6 +162,40 @@
   </section>
 
   <!-- Simulation (sim-view.js): slip target at the logged μ for a gear / corner of the imported MoTeC log -->
+  <!-- PRO only: track detection (manual 9) splits the lap into acceleration sectors by lap distance.
+       Circuit map (track-map.js): click a sector / split, double-click to split, drag a split. -->
+  <section class="panel track-panel" id="trackPanel" hidden aria-label="Track detection">
+    <div class="tp-main">
+      <div class="tp-bar">
+        <span class="tp-sel" id="tpSel" role="status">Click a sector or a split on the circuit map</span>
+        <button id="tpSplit" hidden><span class="material-icons" aria-hidden="true">content_cut</span>Split here</button>
+        <button id="tpRemove" hidden><span class="material-icons" aria-hidden="true">delete</span>Remove sector</button>
+        <button id="tpRemoveSplit" hidden><span class="material-icons" aria-hidden="true">link_off</span>Remove split</button>
+      </div>
+      <div class="tp-map" id="tpMap"></div>
+      <div class="tp-legend" id="tpLegend" aria-label="Map legend">
+        <span><i class="tp-sw tp-sw-br"></i>Brake · front brake pressure, inside (full at 80 % of the lap's highest)</span>
+        <span><i class="tp-sw tp-sw-tp"></i>Throttle · tpd, outside (full above 95 %)</span>
+      </div>
+      <p class="tp-help">Click a sector to select it · double-click the track to split a sector there · drag a split to move it (sectors it passes over are removed) · Delete removes the selection</p>
+    </div>
+    <div class="tp-side">
+      <h2 class="set-h">Track detection</h2>
+      <p class="set-note">The lap distance is reset at the lap trigger beacon. A sector ends at its lap distance; the next one starts when the rider is off the throttle. Unused sectors get a distance far beyond the lap length.</p>
+      <div class="td-row">
+        <button class="switch" id="tdOn" role="switch" aria-checked="true"><span class="material-icons" aria-hidden="true">toggle_on</span>Track detection on</button>
+        <span class="td-off-note" id="tdOffNote">Off: failsafe sector all the time</span>
+      </div>
+      <div class="td-fields" id="tdFields"></div>
+      <h3 class="set-sub">Sectors</h3>
+      <table class="sheet td-tbl" id="tdEnds" aria-label="End of each acceleration sector, lap distance in metres"></table>
+      <div class="td-row">
+        <button id="tdFromLog" title="Sectors at the braking points of the corners of the loaded log (fastest lap), maps from the STK allocation">Sectors from the logged corners</button>
+        <button id="tdReset">Clear sectors</button>
+      </div>
+      <p class="td-msg" id="tdMsg" role="status"></p>
+    </div>
+  </section>
   <section class="sim-panel" id="simPanel" hidden aria-label="Simulation"></section>
 
   <div id="mainView">
@@ -257,6 +297,7 @@
 <script src="js/motec-ld.js"></script>
 <script src="js/log-panel.js"></script>
 <script src="js/sim-view.js"></script>
+<script src="js/track-map.js"></script>
 <script src="js/bmwrc25.js"></script>
 <script src="js/app.js"></script>
 <script src="js/page-scrollbar.js"></script>

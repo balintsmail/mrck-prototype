@@ -3,6 +3,27 @@
   // Every map starts with calculated mu lines (Same for all points / Ratio), fitted to its data.
   D.targets.forEach(t => MuLines.ensure(t));
   const GEAR_COLORS = SlipChart.GEAR_COLORS;
+  // STK: a map per gear (#1..#6); PRO: a map per track sector (S1..S15). "gear" in the code below is the
+  // allocation column of the active variant (data.js MRCK_SLOTS: n, pre, one, many, list).
+  const SL = () => window.MRCK_SLOTS();
+  const slotTag = gi => SL().pre + (gi + 1);
+  // slot indices as tags, runs of 3 or more joined: S1–S15, #1 #2
+  const slotTags = gis => {
+    const out = [];
+    gis.forEach(gi => { const r = out[out.length - 1]; if (r && gi === r[1] + 1) r[1] = gi; else out.push([gi, gi]); });
+    return out.flatMap(([a, b]) => (b - a >= 2 ? [`${slotTag(a)}–${slotTag(b)}`] : a === b ? [slotTag(a)] : [slotTag(a), slotTag(b)]));
+  };
+  const usedSlots = (m, id) => D.allocation[m].map((x, i) => (x === id ? i : -1)).filter(i => i >= 0);
+  // 15 sector colours along the gear palette
+  const SECTOR_COLORS = (() => {
+    const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), n = D.SECTORS;
+    return Array.from({ length: n }, (_, i) => {
+      const x = i / (n - 1) * (GEAR_COLORS.length - 1), k = Math.min(GEAR_COLORS.length - 2, Math.floor(x)), f = x - k;
+      const a = hex(GEAR_COLORS[k]), b = hex(GEAR_COLORS[k + 1]);
+      return '#' + a.map((v, j) => Math.round(v + (b[j] - v) * f).toString(16).padStart(2, '0')).join('');
+    });
+  })();
+  const slotColors = () => (D.variant === 'pro' ? SECTOR_COLORS : GEAR_COLORS);
   const $ = id => document.getElementById(id);
 
   const state = { tab: 'modes', targetIndex: 0, muIndex: D.MU_BASE, vmode: 'Dry1' };
@@ -41,16 +62,16 @@
 
   // Every undo entry records where and what changed (shown in the Changes panel) plus a snapshot:
   // map edits { map, json }, allocation edits (gear -> map) { alloc }.
-  const cellName = (mode, gear) => `${MODE_NAMES[mode] || mode} #${gear + 1}`;
+  const cellName = (mode, gear) => `${MODE_NAMES[mode] || mode} ${slotTag(gear)}`;
   function where() {
     const t = D.targets[state.targetIndex];
     if (state.tab === 'modes') {
-      const g = D.allocation[state.vmode].map((x, i) => (x === t.id ? '#' + (i + 1) : null)).filter(Boolean);
+      const g = slotTags(usedSlots(state.vmode, t.id));
       if (g.length) return `${MODE_NAMES[state.vmode]} ${g.join(', ')}`;
     }
     if (state.tab === 'gears') {
       const ms = D.VEHICLE_MODES.filter(m => D.allocation[m][state.cell.gear] === t.id).map(m => MODE_NAMES[m]);
-      if (ms.length) return `${ms.join(', ')} #${state.cell.gear + 1}`;
+      if (ms.length) return `${ms.join(', ')} ${slotTag(state.cell.gear)}`;
     }
     return `Map ${t.id}`;
   }
@@ -67,7 +88,7 @@
     if (!editedMaps.has(id)) { editedMaps.add(id); track('action', `Edit map ${id}`); }
     record({ label: where(), desc: `Map ${id} · ${desc || 'slip target edited'}`, map: state.targetIndex, json: snapshot() });
   }
-  function pushAllocUndo(label, desc) { record({ label, desc, alloc: JSON.stringify(D.allocation) }); }
+  function pushAllocUndo(label, desc) { if (D.variant === 'pro') D.trackDet.example = false; record({ label, desc, alloc: JSON.stringify(D.allocation), variant: D.variant }); }
 
   // --- mu line settings (All slip target maps) ---
   // Degressive: μ 1.00, max (1.60) and min (-0.25) are edited, the levels between follow a degression.
@@ -198,13 +219,16 @@
   }));
   // Left column (Gears view): gears as vertical tabs, each showing the map every mode uses.
   function selectGear(gi) {
-    gi = Math.max(0, Math.min(GEAR_COLORS.length - 1, gi));
+    gi = Math.max(0, Math.min(SL().n - 1, gi));
     state.cell = { mode: state.cell.mode, gear: gi };
     state.targetIndex = indexOf(D.allocation[state.cell.mode][gi]);
     sync();
   }
-  $('gearList').innerHTML = GEAR_COLORS.map((c, gi) =>
-    `<button role="option" class="pk" data-g="${gi}" aria-label="Gear ${gi + 1}"><span class="pk-name">#${gi + 1}</span><span class="pk-use"></span></button>`).join('');
+  function buildGearList() {
+    $('gearList').innerHTML = SL().list.map((g, gi) =>
+      `<button role="option" class="pk" data-g="${gi}" aria-label="${SL().one} ${gi + 1}"><span class="pk-name">${slotTag(gi)}</span><span class="pk-use"></span></button>`).join('');
+  }
+  buildGearList();
   $('gearList').addEventListener('click', e => { const b = e.target.closest('.pk'); if (b) selectGear(+b.dataset.g); });
 
   // --- Settings: reduction method ---
@@ -358,10 +382,10 @@
     el.hidden = !on;
     if (!on) return;
     const items = state.tab === 'modes' ? ['Dry1', 'Dry2', 'Rain', 'Int'].map(m => ({ k: 'mode', v: D.VEHICLE_MODES.indexOf(m), label: MODE_NAMES[m], sel: m === state.vmode }))
-      : state.tab === 'gears' ? GEAR_COLORS.map((c, gi) => ({ k: 'gear', v: gi, label: '#' + (gi + 1), sel: gi === state.cell.gear }))
+      : state.tab === 'gears' ? SL().list.map((g, gi) => ({ k: 'gear', v: gi, label: slotTag(gi), sel: gi === state.cell.gear }))
       : [{ k: 'all', v: 0, label: '<i class="sw sw-all"></i>All', sel: noSel() },   // All: no map selected, every map shown
          ...D.targets.map(t => ({ k: 'map', v: t.id, label: `<i class="sw" style="background:${mapColor(t.id)}"></i>Map ${t.id}`, sel: !noSel() && t.id === self.id }))];
-    el.setAttribute('aria-label', state.tab === 'modes' ? 'Riding modes' : state.tab === 'gears' ? 'Gears' : 'Slip target maps');
+    el.setAttribute('aria-label', state.tab === 'modes' ? 'Riding modes' : state.tab === 'gears' ? SL().many : 'Slip target maps');
     el.innerHTML = items.map(it => `<button role="tab" data-k="${it.k}" data-v="${it.v}" aria-selected="${it.sel}">${it.label}</button>`).join('');
   }
   $('subTabs').addEventListener('click', e => {
@@ -536,7 +560,12 @@
       return false;
     }
     state.logName = name;
+    data.gearRaw = data.gear;                       // STK filters / simulates by gear, PRO by sector (slotChannel)
+    if (!data.dist) data.dist = null;
+    autoTrack(data);
+    slotChannel(data);
     logView.load(data, name);
+    trackMap.setLog(data);
     sync();
     return true;
   }
@@ -565,18 +594,28 @@
     } catch (err) { alert(`Could not load the sample data:\n${err.message}`); return false; }
     finally { b.disabled = false; sub.textContent = was; }
   }
+  // PRO Track detection without a log: the sample is loaded by default, so the circuit map has a track to show
+  let sampleAuto = false;
+  async function autoSample() {
+    if (logView.loaded || sampleAuto) return;
+    sampleAuto = true;
+    try {
+      const res = await fetch(SAMPLE_LOG.url);
+      if (res.ok && loadLog(await res.arrayBuffer(), SAMPLE_LOG.name)) track('action', 'Load sample data (Track detection default)');
+    } catch (err) { /* the map keeps its empty state with Add MOTEC data */ }
+  }
   const browseLog = () => { $('logFile').value = ''; $('logFile').click(); };
   $('logSample').onclick = async () => { if (await loadSample($('logSample'))) setLogModal(false); };
   $('logFile').onchange = async e => {
     const f = e.target.files[0];
     if (f && loadLog(await f.arrayBuffer(), f.name)) track('action', 'Open own MoTeC log');
   };
-  $('logClear').onclick = () => { state.logName = null; logView.clear(); sync(); track('action', 'Remove MoTeC log'); };
+  $('logClear').onclick = () => { state.logName = null; logView.clear(); trackMap.setLog(null); sync(); track('action', 'Remove MoTeC log'); };
 
   // What the graph shows, for the log filters' "Automatically adjust":
   // gears (1..6) whose slip targets are selected, and the μ range of the selected μ level (half-way to its neighbours).
   function graphGears() {
-    const all = [0, 1, 2, 3, 4, 5], id = D.targets[state.targetIndex].id;
+    const all = SL().list.map(g => g - 1), id = D.targets[state.targetIndex].id;
     let gs;
     if (state.tab === 'gears') gs = [state.cell.gear];
     else if (noSel()) gs = all;
@@ -608,7 +647,7 @@
     const desc = baseName.replace(/\.bmwrc25$/i, '') + '_MRCK';
     const xml = Bmwrc25.exportBmwrc25(base, {
       targets: D.targets.map(ecuTarget),
-      allocation: D.allocation,
+      allocation: D.allocStk,               // the base file is an STK dataset: the gear allocation
       userShift: US,
       reduction: D.settings.reduction === 'cut' ? 1 : 0,
       dtcMode: D.settings.dtcMode,
@@ -625,6 +664,7 @@
   let imported = null;
   $('exportMrck').onclick = async () => {
     track('action', 'Export MRCK');
+    if (D.variant === 'pro') alert('Export MRCK writes an STK dataset: the gear allocation is exported, the sector allocation and track detection are not (no PRO base file yet).');
     try {
       if (imported) { exportFile(imported.xml, imported.name); return; }
       const res = await fetch(EXPORT_BASE, { cache: 'no-cache' });
@@ -661,7 +701,7 @@
       if (JSON.stringify(t.rows) !== before) changed.push(t.id);
     });
     D.targets.splice(0, D.targets.length, ...data.targets);   // same array: the graphs and tables keep their reference
-    Object.keys(data.allocation).forEach(m => { D.allocation[m] = data.allocation[m]; });
+    Object.keys(data.allocation).forEach(m => { D.allocStk[m] = data.allocation[m]; });   // an STK file: the gear allocation
     Object.assign(D.userShift, data.userShift);
     Object.assign(D.settings, { reduction: data.reduction, dtcMode: data.dtcMode });
     D.source = data.desc || f.name.replace(/\.bmwrc25$/i, '');
@@ -680,9 +720,11 @@
     const item = from.pop(); if (!item) return;
     // the opposite stack gets the current state, keeping the entry's label and time
     if (item.alloc != null) {
-      to.push(Object.assign({}, item, { alloc: JSON.stringify(D.allocation) }));
+      if ((item.variant || 'stk') !== D.variant) setVariant(item.variant || 'stk', true);   // show the allocation that changes
+      to.push(Object.assign({}, item, { alloc: JSON.stringify(D.allocation) }, item.td ? { td: JSON.stringify(TD) } : {}));
       const a = JSON.parse(item.alloc);
       Object.keys(a).forEach(m => { D.allocation[m] = a[m]; });
+      if (item.td) { Object.assign(TD, JSON.parse(item.td)); trackChanged(); }
       state.targetIndex = indexOf(D.allocation[state.cell.mode][state.cell.gear]);
     } else {
       to.push(Object.assign({}, item, { json: JSON.stringify(D.targets[item.map]) }));
@@ -770,47 +812,48 @@
     clearTimeout(flash[el]);
     if (msg) flash[el] = setTimeout(() => { $(el).textContent = ''; }, 2500);
   }
+  // STK: rows riding modes, columns gears. PRO: 15 sectors do not fit across the left column, so rows are the
+  // sectors and columns the riding modes. mi(r, c) / si(r, c): riding mode / slot of a grid cell.
+  const pro = () => D.variant === 'pro';
+  const mi = (r, c) => (pro() ? c : r), si = (r, c) => (pro() ? r : c);
+  const cellAlloc = (r, c) => D.allocation[MODES[mi(r, c)]][si(r, c)];
   function followCell(r, c) {
-    state.cell = { mode: MODES[r], gear: c };
-    state.vmode = MODES[r];
-    state.targetIndex = indexOf(D.allocation[MODES[r]][c]);
+    const m = MODES[mi(r, c)], g = si(r, c);
+    state.cell = { mode: m, gear: g };
+    state.vmode = m;
+    state.targetIndex = indexOf(D.allocation[m][g]);
   }
+  const modeHeader = i => { state.tab = 'modes'; state.picker = false; state.vmode = MODES[i]; state.cell = { mode: MODES[i], gear: state.cell.gear }; state.targetIndex = indexOf(D.allocation[MODES[i]][state.cell.gear]); sync(); };
+  const slotHeader = g => { state.tab = 'gears'; state.picker = false; state.cell = { mode: state.cell.mode, gear: g }; state.targetIndex = indexOf(D.allocation[state.cell.mode][g]); sync(); };
+  const modeOn = i => state.tab === 'modes' && !state.picker && MODES[i] === state.vmode;
+  const slotOn = g => state.tab === 'gears' && !state.picker && g === state.cell.gear;
+  const allocShape = () => {
+    const modes = MODES.map(m => MODE_NAMES[m] || m), slots = SL().list.map((g, gi) => slotTag(gi));
+    return pro() ? [slots, modes] : [modes, slots];
+  };
   const allocGrid = new SheetGrid($('allocTbl'), {
-    label: 'Slip target allocation: map per vehicle mode and gear',
+    label: 'Slip target allocation: map per riding mode and gear',
     startEmpty: true,                       // no cell selected at start
-    rows: MODES.map(m => MODE_NAMES[m] || m),
-    cols: GEAR_COLORS.map((c, gi) => '#' + (gi + 1)),
-    get: (r, c) => D.allocation[MODES[r]][c],
+    rows: allocShape()[0],
+    cols: allocShape()[1],
+    get: (r, c) => cellAlloc(r, c),
     parse: parseMap,
-    cellClass: (r, c) => (!noSel() && D.allocation[MODES[r]][c] === D.targets[state.targetIndex].id ? 'uses-edited' : ''),
+    cellClass: (r, c) => (!noSel() && cellAlloc(r, c) === D.targets[state.targetIndex].id ? 'uses-edited' : ''),
     write(cells) {
-      const first = cells[0], last = cells[cells.length - 1];
+      const first = cells[0], last = cells[cells.length - 1], nm = x => cellName(MODES[mi(x.r, x.c)], si(x.r, x.c));
       pushAllocUndo(
-        cells.length === 1 ? cellName(MODES[first.r], first.c) : `${cellName(MODES[first.r], first.c)} … ${cellName(MODES[last.r], last.c)}`,
-        cells.length === 1 ? `Map ${D.allocation[MODES[first.r]][first.c]} → ${first.v}` : `${cells.length} cells changed`);
-      cells.forEach(({ r, c, v }) => { D.allocation[MODES[r]][c] = v; });
+        cells.length === 1 ? nm(first) : `${nm(first)} … ${nm(last)}`,
+        cells.length === 1 ? `Map ${cellAlloc(first.r, first.c)} → ${first.v}` : `${cells.length} cells changed`);
+      cells.forEach(({ r, c, v }) => { D.allocation[MODES[mi(r, c)]][si(r, c)] = v; });
       sync();
       return cells.length;
     },
     // selecting a cell shows its map on the right: Riding modes -> that mode, Gears -> that gear, maps -> that map
     onActive(r, c) { followCell(r, c); state.noSel = false; state.picker = false; sync(); },
-    // Mode name -> Modes tab with that mode; gear header -> Gears tab with that gear.
-    onRowHeader(r) {
-      state.tab = 'modes'; state.picker = false;
-      state.vmode = MODES[r];
-      state.cell = { mode: MODES[r], gear: state.cell.gear };
-      state.targetIndex = indexOf(D.allocation[MODES[r]][state.cell.gear]);
-      sync();
-    },
-    onColHeader(c) {
-      state.tab = 'gears'; state.picker = false;
-      state.cell = { mode: state.cell.mode, gear: c };
-      state.targetIndex = indexOf(D.allocation[state.cell.mode][c]);
-      sync();
-    },
-    headerActive: (kind, i) => (kind === 'row'
-      ? state.tab === 'modes' && !state.picker && MODES[i] === state.vmode
-      : state.tab === 'gears' && !state.picker && i === state.cell.gear),
+    // Mode name -> Modes tab with that mode; gear / sector header -> Gears (Sectors) tab with it.
+    onRowHeader(r) { if (pro()) slotHeader(r); else modeHeader(r); },
+    onColHeader(c) { if (pro()) modeHeader(c); else slotHeader(c); },
+    headerActive: (kind, i) => ((kind === 'row') !== pro() ? modeOn(i) : slotOn(i)),
     onMessage: msg => flash('allocMsg', msg),
   });
 
@@ -823,13 +866,13 @@
 
   // The allocation table keeps its own selection (none at start), independent of the right side.
   function syncSide() { allocGrid.render(); }
-  const editId = () => (allocGrid.none ? null : D.allocation[MODES[allocGrid.a.r]][allocGrid.a.c]);
+  const editId = () => (allocGrid.none ? null : cellAlloc(allocGrid.a.r, allocGrid.a.c));
   // hovering an allocation cell thickens its map on the graph, like the selected cell
   state.hoverMap = null;
   const setHoverMap = id => { if (state.hoverMap !== id) { state.hoverMap = id; renderChart(); } };
   $('allocTbl').addEventListener('mouseover', e => {
     const td = e.target.closest('td[data-r]');
-    setHoverMap(td ? D.allocation[MODES[+td.dataset.r]][+td.dataset.c] : null);
+    setHoverMap(td ? cellAlloc(+td.dataset.r, +td.dataset.c) : null);
   });
   $('allocTbl').addEventListener('mouseleave', () => setHoverMap(null));
 
@@ -914,7 +957,7 @@
     $('picker').hidden = !state.picker;
     $('mainView').hidden = state.picker;
     if (!state.picker) return;
-    const cur = cellMap(), where = `${MODE_NAMES[state.cell.mode]} · Gear ${state.cell.gear + 1}`;
+    const cur = cellMap(), where = `${MODE_NAMES[state.cell.mode]} · ${SL().one} ${state.cell.gear + 1}`;
     $('pickerTitle').innerHTML = `Choose map for <b>${where}</b> <span class="picker-sub">currently Map ${cur}</span>`;
     [...$('pickerList').children].forEach(b => {
       const id = +b.dataset.id, used = usage(id);
@@ -944,7 +987,7 @@
   // Where is a map used? e.g. "Dry 1: G5, G6 · Dry 2: G5"
   function usage(id) {
     return D.VEHICLE_MODES.map(m => {
-      const gears = D.allocation[m].map((x, gi) => (x === id ? '#' + (gi + 1) : null)).filter(Boolean);
+      const gears = slotTags(usedSlots(m, id));
       return gears.length ? `${MODE_NAMES[m] || m} ${gears.join(' ')}` : null;
     }).filter(Boolean);
   }
@@ -1098,6 +1141,289 @@
   window.addEventListener('resize', fitSide);
   window.addEventListener('scroll', fitSide, { passive: true });
 
+  // --- STK / PRO (header switch). STK: slip target map per gear. PRO: per acceleration sector of the track
+  // detection (manual 5.5, 9). Each variant keeps its own allocation; the Gears tab becomes Sectors, and the logged
+  // data is filtered and simulated by the sector the ECU would have been in (from the lap distance).
+  function setVariant(v, quiet) {
+    if (v === D.variant) return;
+    D.variant = v;
+    D.allocation = v === 'pro' ? D.allocPro : D.allocStk;
+    state.cell = { mode: state.cell.mode, gear: Math.min(state.cell.gear, SL().n - 1) };
+    if (state.memGear != null) state.memGear = Math.min(state.memGear, SL().n - 1);
+    state.picker = false;
+    [...$('variant').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+    $('tabGears').textContent = SL().many;
+    $('tabTrack').hidden = v !== 'pro';             // Track detection tab: PRO only
+    if (v !== 'pro' && state.tab === 'track') state.tab = 'modes';
+    const [rows, cols] = allocShape();
+    allocGrid.none = true;                          // the cell layout changes: no allocation cell selected
+    allocGrid.setShape(rows, cols);
+    allocGrid.t.setAttribute('aria-label', `Slip target allocation: map per riding mode and ${SL().one.toLowerCase()}`);
+    buildGearList();
+    if (logView.d) { slotChannel(logView.d); logView.slotsChanged(); }
+    if (!quiet) track('action', `Switch to ${v.toUpperCase()}`);
+    sync();
+  }
+  $('variant').onclick = e => { const b = e.target.closest('button'); if (b) setVariant(b.dataset.v); };
+
+  // Track detection (manual 9): the lap distance is reset at the lap trigger beacon (lap start); the out lap is measured
+  // back from the beacon. The acceleration sector is the first one whose end lies beyond the lap distance (equal ends:
+  // the higher sector), and it only changes while the bike is off the throttle (drag; here: decelerating, accx < 0).
+  const TD = D.trackDet, UNUSED = 99999;
+  function lapDistance(d) {
+    if (!d.dist) return null;
+    const out = new Float32Array(d.n), at = t => d.dist[Math.min(d.n - 1, Math.max(0, Math.floor(t * d.rate)))];
+    d.laps.forEach(l => {
+      const i0 = Math.max(0, Math.floor(l.a * d.rate)), i1 = Math.min(d.n, Math.ceil(l.b * d.rate));
+      const base = l.name === 'Out lap' ? at(l.b) - TD.lapLen : at(l.a);
+      for (let i = i0; i < i1; i++) out[i] = d.dist[i] - base;
+    });
+    return out;
+  }
+  function sectorChannel(d) {
+    if (!TD.on) return new Float32Array(d.n).fill(TD.failsafe);
+    const p = lapDistance(d);
+    if (!p) return null;
+    const ends = TD.ends, n = ends.length, out = new Float32Array(d.n);
+    let cur = 1;
+    for (let i = 0; i < d.n; i++) {
+      let k = 0;
+      while (k < n && ends[k] <= p[i]) k++;
+      const want = Math.min(n, k + 1);
+      if (want !== cur && (!d.accx || d.accx[i] < 0)) cur = want;   // the sector changes in drag only
+      out[i] = cur;
+    }
+    return out;
+  }
+  // d.gear is what the log filters and the simulation use: the gear (STK) or the sector (PRO)
+  function slotChannel(d) {
+    d.sector = d.laps && d.laps.length ? sectorChannel(d) : null;
+    d.gear = D.variant === 'pro' ? d.sector : d.gearRaw;
+  }
+  // Sectors from the logged corners (fastest lap): sector k = corner k and the straight after it, ending where the
+  // rider brakes for the next corner; the last corner's sector ends at the line. Max 15 (later corners share S15).
+  // The maps follow the STK allocation: each sector gets the map its riding mode uses in the gear of that kind of corner,
+  // from its slowest speed (data.js SECTOR_CLASS), so similar corners get similar maps.
+  function sectorsFromLog(d) {
+    if (!d || !d.dist || !d.refLap || !d.corners.length) return null;
+    const at = t => d.dist[Math.min(d.n - 1, Math.max(0, Math.floor(t * d.rate)))];
+    const lapLen = Math.round(at(d.refLap.b) - at(d.refLap.a));
+    const brakes = d.corners.map(c => Math.round(at(c.ref[0][0]) - at(d.refLap.a))).filter(x => x > 0 && x < lapLen).sort((a, b) => a - b);
+    const n = Math.min(D.SECTORS, brakes.length);
+    const ends = brakes.slice(1, n).concat([lapLen]);
+    // slowest speed of each sector on the fastest lap -> corner class -> STK gear column
+    const a = Math.floor(d.refLap.a * d.rate), b = Math.min(d.n, Math.floor(d.refLap.b * d.rate)), base = d.dist[a];
+    const vmin = ends.map(() => Infinity);
+    if (d.vref) for (let i = a; i < b; i++) {
+      const p = d.dist[i] - base; let k = 0;
+      while (k < ends.length - 1 && ends[k] <= p) k++;
+      vmin[k] = Math.min(vmin[k], d.vref[i]);
+    }
+    const cls = vmin.map(v => D.sectorClass(Number.isFinite(v) ? v : 120));
+    return { lapLen, ends, cls, count: n };
+  }
+  const padEnds = e => e.concat(new Array(D.SECTORS - e.length).fill(UNUSED));
+  function applySectors(sec) {
+    TD.lapLen = sec.lapLen; TD.ends = padEnds(sec.ends);
+    D.VEHICLE_MODES.forEach(m => { D.allocPro[m] = D.proAlloc(m, sec.cls); });
+  }
+  // A log loaded while the sectors are the untouched example (or empty): lap length, sectors and maps from it
+  function autoTrack(d) {
+    if (!TD.example && TD.ends.some(x => x < UNUSED)) return;
+    const sec = sectorsFromLog(d);
+    if (sec) applySectors(sec);
+  }
+
+  // --- Track detection tab (PRO): circuit map + settings + sector table ---------------------------------------
+  // Every change of the sectors is one history entry (sector ends + the PRO allocation, which moves with them).
+  function pushTrackUndo(label, desc) {
+    TD.example = false;
+    record({ label, desc, alloc: JSON.stringify(D.allocPro), variant: 'pro', td: JSON.stringify(TD) });
+  }
+  const used = () => TD.ends.filter(x => x < UNUSED);
+  const MIN_SECTOR = 10;                                   // [m] shortest sector the map editing makes
+  const SEC_COLORS = Array.from({ length: D.SECTORS }, (_, i) => MAP_COLORS[(i * 4) % MAP_COLORS.length]);   // neighbours far apart on the colour wheel
+  // sector ends and the PRO allocation in one go: ends = used ends (ascending, last = finish), alloc[m] = one map per sector
+  function setSectors(ends, alloc) {
+    TD.ends = padEnds(ends);
+    D.VEHICLE_MODES.forEach(m => { const a = alloc[m].slice(0, ends.length); while (a.length < D.SECTORS) a.push(a[a.length - 1]); D.allocPro[m] = a; });
+  }
+  const allocCopy = () => Object.fromEntries(D.VEHICLE_MODES.map(m => [m, D.allocPro[m].slice()]));
+  const fmtM = v => `${Math.round(v).toLocaleString('en-US')} m`;
+  // merge the sectors on both sides of split k; dropRight: the right one's map goes (else the left one's)
+  function removeSplit(k, dropRight = true) {
+    const e = used(), al = allocCopy();
+    if (k < 0 || k >= e.length - 1) return;
+    e.splice(k, 1);
+    D.VEHICLE_MODES.forEach(m => al[m].splice(dropRight ? k + 1 : k, 1));
+    setSectors(e, al);
+  }
+  function removeSector(s0) {
+    const n = used().length;
+    if (n <= 1) { flash('tdMsg', 'The last sector cannot be removed'); return; }
+    pushTrackUndo(`Sector S${s0 + 1}`, 'sector removed, merged into its neighbour');
+    if (s0 > 0) removeSplit(s0 - 1, true); else removeSplit(0, false);
+    state.tpSel = { type: 'sector', s: Math.max(0, s0 - 1) };
+    trackChanged();
+  }
+  function removeSplitAt(k) {
+    pushTrackUndo(`Split S${k + 1} | S${k + 2}`, `split at ${fmtM(used()[k])} removed`);
+    removeSplit(k, true);
+    state.tpSel = { type: 'sector', s: k };
+    trackChanged();
+  }
+  function splitAt(p) {
+    const e = used(), al = allocCopy();
+    if (e.length >= D.SECTORS) { flash('tdMsg', `All ${D.SECTORS} sectors are in use: remove one first`); return; }
+    p = Math.round(p);
+    let s0 = 0;
+    while (s0 < e.length - 1 && e[s0] <= p) s0++;
+    const from = s0 ? e[s0 - 1] : 0;
+    if (p - from < MIN_SECTOR || e[s0] - p < MIN_SECTOR) { flash('tdMsg', 'Too close to a split'); return; }
+    pushTrackUndo(`Sector S${s0 + 1}`, `split at ${fmtM(p)}`);
+    e.splice(s0, 0, p);
+    D.VEHICLE_MODES.forEach(m => al[m].splice(s0, 0, al[m][s0]));   // both halves keep the sector's maps
+    setSectors(e, al);
+    state.tpSel = { type: 'split', k: s0 };
+    trackChanged();
+  }
+  // Dragging split k to lap distance p: splits it passes are removed, with the sectors they covered completely.
+  let dragSnap = null;
+  function dragSplit(k, p, phase) {
+    if (phase === 'start') { dragSnap = { ends: used(), alloc: allocCopy() }; pushTrackUndo(`Split S${k + 1} | S${k + 2}`, 'moved'); return; }
+    if (phase === 'end') { dragSnap = null; trackChanged(); return; }
+    if (!dragSnap) return;
+    const e0 = dragSnap.ends, fin = e0[e0.length - 1];
+    const x = Math.round(Math.max(MIN_SECTOR, Math.min(fin - MIN_SECTOR, p)));
+    const gone = new Set(), goneAlloc = new Set();
+    e0.forEach((v, j) => {
+      if (j > k && j < e0.length - 1 && v <= x) { gone.add(j); goneAlloc.add(j); }   // passed forwards: sector j covered
+      if (j < k && v >= x) { gone.add(j); goneAlloc.add(j + 1); }                     // passed backwards: sector j + 1 covered
+    });
+    const e = e0.map((v, j) => (j === k ? x : v)).filter((v, j) => !gone.has(j));
+    const al = Object.fromEntries(D.VEHICLE_MODES.map(m => [m, dragSnap.alloc[m].filter((v, j) => !goneAlloc.has(j))]));
+    setSectors(e, al);
+    state.tpSel = { type: 'split', k: k - [...gone].filter(j => j < k).length };
+    syncTrack();
+    const last = undo[undo.length - 1];
+    if (last && gone.size) last.desc = `moved to ${fmtM(x)}, ${gone.size} sector${gone.size > 1 ? 's' : ''} removed`;
+    else if (last) last.desc = `moved to ${fmtM(x)}`;
+  }
+  const trackMap = new TrackMap($('tpMap'), {
+    onSelect(sel) { state.tpSel = sel; syncTrack(); },
+    onSplit: p => splitAt(p),
+    onDrag: dragSplit,
+    emptyHtml: () => '<p>Load MoTeC data with GPS to draw the circuit and edit the sectors on it.</p><button class="tm-load"><span class="material-icons" aria-hidden="true">add</span>Add MOTEC data</button>',
+  });
+  $('tpMap').addEventListener('click', e => { if (e.target.closest('.tm-load')) setLogModal(true); });
+  $('tpSplit').onclick = () => { const sl = state.tpSel; if (sl && sl.type === 'sector' && sl.p != null) splitAt(sl.p); };
+  $('tpRemove').onclick = () => { const sl = state.tpSel; if (sl && sl.type === 'sector') removeSector(sl.s); };
+  $('tpRemoveSplit').onclick = () => { const sl = state.tpSel; if (sl && sl.type === 'split') removeSplitAt(sl.k); };
+  document.addEventListener('keydown', e => {
+    if (state.tab !== 'track' || (e.key !== 'Delete' && e.key !== 'Backspace') || !state.tpSel) return;
+    if (document.activeElement && document.activeElement.closest('input, textarea, table')) return;
+    e.preventDefault();
+    if (state.tpSel.type === 'split') removeSplitAt(state.tpSel.k); else removeSector(state.tpSel.s);
+  });
+
+  const TD_FIELDS = [
+    ['lapLen', 'Total lap length [m]', 0, 20000],
+    ['pitEnd', 'Lap distance at pit lane end [m]', 0, 20000],
+    ['pitSector', 'Sector at pit lane end', 1, D.SECTORS],
+    ['initDist', 'Lap distance initial value [m]', 0, 20000],
+    ['failsafe', 'Failsafe sector', 1, D.SECTORS],
+  ];
+  $('tdFields').innerHTML = TD_FIELDS.map(([k, label]) =>
+    `<label>${label}<input type="text" inputmode="numeric" data-k="${k}"></label>`).join('');
+  $('tdFields').addEventListener('change', e => {
+    const inp = e.target.closest('input'); if (!inp) return;
+    const [k, label, lo, hi] = TD_FIELDS.find(f => f[0] === inp.dataset.k);
+    const v = Math.round(Number(inp.value.replace(',', '.')));
+    if (Number.isFinite(v) && v !== TD[k]) { pushTrackUndo('Track detection', `${label} ${TD[k]} → ${v}`); TD[k] = Math.max(lo, Math.min(hi, v)); }
+    trackChanged();
+  });
+  // Sector table: from / to [m] (to is editable). The maps are not here: in the full app the sectors also carry
+  // engine brake and rider request settings, so the allocation stays on the allocation tables.
+  const TD_COLS = ['From [m]', 'To [m]'];
+  const tdGrid = new SheetGrid($('tdEnds'), {
+    startEmpty: true,
+    label: 'Sectors: lap distance from / to [m]',
+    rows: Array.from({ length: D.SECTORS }, (_, i) => 'S' + (i + 1)), cols: TD_COLS,
+    get: (r, c) => {
+      const e = used();
+      if (r >= e.length) return '';
+      return c === 0 ? (r ? e[r - 1] : 0) : e[r];
+    },
+    format: v => (v === '' ? '–' : String(v)),
+    parse: s => { const v = Math.round(Number(String(s).trim().replace(',', '.'))); return Number.isFinite(v) && v >= 0 ? v : null; },
+    readOnly: (r, c) => c === 0 || r >= used().length || (c === 1 && r === used().length - 1),   // the last sector ends at the line
+    cellClass: (r, c) => [r >= used().length ? 'td-unused' : '', state.tpSel && state.tpSel.type === 'sector' && state.tpSel.s === r ? 'row-active' : ''].join(' '),
+    write(cells) {
+      const e = used(), al = allocCopy();
+      let n = 0;
+      cells.forEach(({ r, c, v }) => {
+        if (r >= e.length) return;
+        if (c === 1) {
+          const lo = (r ? e[r - 1] : 0) + MIN_SECTOR, hi = e[r + 1] - MIN_SECTOR;
+          if (!(v >= lo && v <= hi)) { flash('tdMsg', `S${r + 1} must end between ${lo} and ${hi} m`); return; }
+          e[r] = v; n++;
+        }
+      });
+      if (!n) return 0;
+      pushTrackUndo(cells.length === 1 ? `Sector S${cells[0].r + 1}` : 'Sectors', `${n} cell${n > 1 ? 's' : ''} changed`);
+      setSectors(e, al);
+      trackChanged();
+      sync();
+      return n;
+    },
+    onActive(r) { if (r < used().length) { state.tpSel = { type: 'sector', s: r }; syncTrack(); } },
+    onMessage: msg => flash('tdMsg', msg),
+  });
+  $('tdOn').onclick = () => { pushTrackUndo('Track detection', TD.on ? 'switched off' : 'switched on'); TD.on = !TD.on; trackChanged(); };
+  $('tdFromLog').onclick = () => {
+    const sec = sectorsFromLog(logView.d);
+    if (!sec) { flash('tdMsg', logView.d ? 'This log has no distance (s_track) or no full lap' : 'Load MoTeC data first'); return; }
+    pushTrackUndo('Sectors', `${sec.count} sectors from the logged corners`);
+    applySectors(sec);
+    state.tpSel = null;
+    trackChanged(); sync();
+    flash('tdMsg', `${sec.count} sectors from the corners of ${state.logName}, maps from the STK allocation`);
+  };
+  $('tdReset').onclick = () => {
+    pushTrackUndo('Sectors', 'cleared: one sector for the whole lap');
+    setSectors([TD.lapLen], allocCopy());
+    state.tpSel = null;
+    trackChanged(); sync();
+  };
+  function trackChanged() {
+    if (logView.d) { slotChannel(logView.d); if (D.variant === 'pro') logView.slotsChanged(); }
+    syncTrack();
+    if (state.tab === 'sim') simView.render();
+  }
+  function syncTrack() {
+    const e = used();
+    if (state.tpSel && ((state.tpSel.type === 'sector' && state.tpSel.s >= e.length) || (state.tpSel.type === 'split' && state.tpSel.k >= e.length - 1))) state.tpSel = null;
+    const sl = state.tpSel;
+    $('trackPanel').classList.toggle('is-off', !TD.on);
+    $('tdOn').setAttribute('aria-checked', TD.on);
+    $('tdOn').querySelector('.material-icons').textContent = TD.on ? 'toggle_on' : 'toggle_off';
+    $('tdOffNote').hidden = TD.on;
+    $('tdFields').querySelectorAll('input').forEach(inp => { if (inp !== document.activeElement) inp.value = TD[inp.dataset.k]; });
+    $('tdFromLog').disabled = !logView.d;
+    tdGrid.render();
+    // selection bar above the map
+    let txt = `${e.length} sector${e.length > 1 ? 's' : ''} · lap ${fmtM(TD.lapLen)} · click a sector or a split`;
+    if (sl && sl.type === 'sector') {
+      const from = sl.s ? e[sl.s - 1] : 0, to = e[sl.s];
+      txt = `S${sl.s + 1} · ${fmtM(from)} – ${fmtM(to)} (${fmtM(to - from)})`;
+    } else if (sl && sl.type === 'split') txt = `Split S${sl.k + 1} | S${sl.k + 2} at ${fmtM(e[sl.k])} · drag it along the track`;
+    $('tpSel').textContent = txt;
+    $('tpSplit').hidden = !(sl && sl.type === 'sector' && sl.p != null);
+    $('tpRemove').hidden = !(sl && sl.type === 'sector') || e.length <= 1;
+    $('tpRemoveSplit').hidden = !(sl && sl.type === 'split');
+    if (state.tab === 'track') trackMap.set({ ends: e, lapLen: TD.lapLen, sel: sl, colors: SEC_COLORS, labels: e.map((x, i) => 'S' + (i + 1)) });
+  }
+
   function sync() {
     // Simulation: the edited map is the one of the simulated riding mode and gear
     if (state.tab === 'sim') { simView.currentGear(); state.targetIndex = indexOf(simView.map.id); state.noSel = false; }
@@ -1152,7 +1478,7 @@
     $('settingsPanel').hidden = tab !== 'settings';
     // Settings has no left column (no map list, no allocation table): full width
     // no left column on Settings / +- Buttons, nor on Simulation until MoTeC data is loaded (empty state)
-    const noSide = tab === 'settings' || (tab === 'sim' && !logView.loaded);
+    const noSide = tab === 'settings' || tab === 'track' || (tab === 'sim' && !logView.loaded);
     // +- Buttons: left column = example map + factor / offset per level, then the logged data adjusters
     document.querySelector('.layout').classList.toggle('user-mode', tab === 'user');
     $('userSide').hidden = tab !== 'user';
@@ -1166,7 +1492,7 @@
     $('shiftMap').value = self.id;
     [...$('shiftMap').options].forEach(o => { const u = usageTxt(+o.value); o.textContent = `Map ${o.value}` + (u ? ` ${u}` : ''); });
     $('shiftPanel').hidden = tab !== 'user';
-    $('log').hidden = tab === 'settings';           // Export MRCK stays on every tab
+    $('log').hidden = tab === 'settings' || tab === 'track';           // Export MRCK stays on every tab
     // The map's data table is always shown below the graph (Modes, Gears, All slip target maps).
     const tableOn = modes || gears || tab === 'maps';
     $('chart').hidden = tab === 'settings';
@@ -1175,11 +1501,12 @@
     syncPaste(self);
     [...$('reduction').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.v === D.settings.reduction));
     syncDtcMode();
+    syncTrack();
     syncShift();
     [...$('modeList').children].forEach(b => {
       const m = D.VEHICLE_MODES[+b.dataset.i];
       b.setAttribute('aria-selected', m === state.vmode);
-      b.querySelector('.pk-use').textContent = D.allocation[m].map((id, gi) => `#${gi + 1} M${id}`).join(' · ');
+      b.querySelector('.pk-use').textContent = D.allocation[m].map((id, gi) => `${slotTag(gi)} M${id}`).join(' · ');
     });
     const logged = logView.loaded;
     $('log').setAttribute('aria-pressed', logged);
@@ -1197,7 +1524,10 @@
     if (tableOn) syncTable(self);
     syncPicker();
     // Simulation: its own panel instead of the graph view
-    $('mainView').hidden = state.picker || tab === 'sim';
+    $('mainView').hidden = state.picker || tab === 'sim' || tab === 'track';
+    $('trackPanel').hidden = tab !== 'track';
+    if (tab === 'track') autoSample();
+    $('tpLegend').hidden = !logView.loaded;
     $('simPanel').hidden = tab !== 'sim';
     if (tab === 'sim') { simView.render(); if (logView.loaded) logView._redrawSoon(); }   // its timeline / circuit map sit in the left column
     renderChart();
@@ -1216,7 +1546,7 @@
 
   function syncChartTitle(self) {
     const tab = state.tab, el = $('chartTitle');
-    el.hidden = tab === 'settings' || state.picker;
+    el.hidden = tab === 'settings' || tab === 'track' || state.picker;
     // the selected μ level is kept lowercase (the label is upper case, which would turn μ into "Μ")
     const muTxt = ` · <span class="lc">${esc(fmtMu(D.MU_ROWS[state.muIndex]))}</span>`;
     let html;
@@ -1225,7 +1555,7 @@
       const w = where();
       html = `Slip target map ${self.id}` + (w !== `Map ${self.id}` ? ` · ${esc(w)}` : '') + muTxt;
     } else if (tab === 'modes') html = `${esc(MODE_NAMES[state.vmode])} slip target maps`;
-    else if (tab === 'gears') html = `Gear #${state.cell.gear + 1} slip target maps`;
+    else if (tab === 'gears') html = `${SL().one} ${slotTag(state.cell.gear)} slip target maps`;
     else html = state.mapFilter.size ? `Slip target maps ${[...state.mapFilter].sort((a, b) => a - b).join(', ')}` : 'All slip target maps';
     el.innerHTML = html;
     $('legendMu').textContent = `Map at ${fmtMu(D.MU_ROWS[state.muIndex])}`;   // the bold line = the selected μ level
@@ -1236,8 +1566,8 @@
   function sharedLabelChars() {
     const grouped = names => { const by = {}; names.forEach(([id, n]) => (by[id] = by[id] || []).push(n)); return Object.values(by).map(a => a.join(', ').length); };
     const lens = [6];
-    D.VEHICLE_MODES.forEach(m => lens.push(...grouped(D.allocation[m].map((id, gi) => [id, '#' + (gi + 1)]))));
-    for (let gi = 0; gi < 6; gi++) lens.push(...grouped(D.VEHICLE_MODES.map(m => [D.allocation[m][gi], MODE_NAMES[m]])));
+    D.VEHICLE_MODES.forEach(m => lens.push(...grouped(D.allocation[m].map((id, gi) => [id, slotTag(gi)]))));
+    for (let gi = 0; gi < SL().n; gi++) lens.push(...grouped(D.VEHICLE_MODES.map(m => [D.allocation[m][gi], MODE_NAMES[m]])));
     return Math.max(...lens);
   }
 
@@ -1255,7 +1585,8 @@
       muBand: logView.muFilter,
       alloc: D.allocation[state.vmode].slice(),
       compare: state.tab === 'modes' || state.tab === 'gears',
-      series: state.tab === 'gears' ? gearSeries() : null,
+      series: state.tab === 'gears' ? gearSeries() : state.tab === 'modes' ? D.allocation[state.vmode].map((id, gi) =>
+        ({ id, name: slotTag(gi), desc: `${SL().one} ${gi + 1}`, color: slotColors()[gi] })) : null,
       editable: !user && !na,       // the user offset preview is read-only; nothing to edit without a selection
       noActive: na,
       rowsHidden: user || na || (maps && !state.showMu) || state.hide.has('mu'),

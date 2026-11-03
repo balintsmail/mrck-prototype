@@ -10,6 +10,8 @@
 //  The μ range slider, timeline and circuit map of the logged data (left column) filter what is shown.
 // The graph uses the slip-target graph's lean axis (70° -> 0° left to right).
 (function () {
+  // gears (STK) or sectors (PRO): see data.js
+  const slots = () => (window.MRCK_SLOTS ? window.MRCK_SLOTS() : { n: 6, list: [1, 2, 3, 4, 5, 6], pre: '#', one: 'Gear', many: 'Gears' });
   const X_MAX = 70, SLIP_MAX = 25.5;
   const FONT = "700 10px 'Noto Sans', system-ui, sans-serif";
   const fmtMu = m => m.toFixed(2);
@@ -93,7 +95,7 @@
       <div class="seg side-seg sim-modes" role="group" aria-label="Riding mode"></div>
     </div>
     <div class="sim-pick">
-      <div class="lp-sub sim-sub"><span class="side-sub">Gears</span><button class="reset-btn" data-reset="gear" title="Reset gears: the most used one" aria-label="Reset gears: the most used one" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
+      <div class="lp-sub sim-sub"><span class="side-sub sim-gears-h">Gears</span><button class="reset-btn" data-reset="gear" title="Reset gears: the most used one" aria-label="Reset gears: the most used one" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
       <div class="chip-list sim-gears" role="group" aria-label="Gears to simulate"></div>
     </div>
     <div class="sim-info"></div>`;
@@ -179,15 +181,18 @@
     currentGear() {
       const d = this.o.getLog();
       if (!this.sel) this.sel = new Set();
-      if (!d) { if (!this.gear) { this.gear = 1; this.sel = new Set([1]); this.autoGear = true; } this.gears = [1, 2, 3, 4, 5, 6]; return this.gear; }   // placeholder until data arrives
-      if (!this.counts || this.countsFor !== d) {
-        const count = new Array(7).fill(0);
+      const S = slots();
+      if (!d) { if (!this.gear || this.gear > S.n) { this.gear = 1; this.sel = new Set([1]); this.autoGear = true; } this.gears = S.list; return this.gear; }   // placeholder until data arrives
+      // d.gear is the gear channel (STK) or the sector channel (PRO), swapped by app.js
+      if (!this.counts || this.countsFor !== (d.gear || d)) {
+        const count = new Array(S.n + 1).fill(0);
         if (d.gear) d.corners.forEach(c => c.ranges.forEach(([a, b]) => {
-          for (let i = Math.floor(a * d.rate); i < Math.min(d.n, Math.ceil(b * d.rate)); i++) { const g = Math.round(d.gear[i]); if (g >= 1 && g <= 6) count[g]++; }
+          for (let i = Math.floor(a * d.rate); i < Math.min(d.n, Math.ceil(b * d.rate)); i++) { const g = Math.round(d.gear[i]); if (g >= 1 && g <= S.n) count[g]++; }
         }));
-        this.counts = count; this.countsFor = d;
+        if (this.counts && this.countsFor !== (d.gear || d)) this.autoGear = true;   // STK <-> PRO: start again on the most used one
+        this.counts = count; this.countsFor = d.gear || d;
       }
-      const gears = d.gear ? [1, 2, 3, 4, 5, 6].filter(g => this.counts[g]) : [1, 2, 3, 4, 5, 6];
+      const gears = d.gear ? S.list.filter(g => this.counts[g]) : S.list;
       this.gears = gears;
       this.sel = new Set([...this.sel].filter(g => gears.includes(g)));
       if (this.autoGear || !this.sel.size) {
@@ -225,10 +230,14 @@
       this.q('.reset-btn[data-reset="gear"]').hidden = this.sel.size === 1 && this.sel.has(most);
       this.q('.sim-modes').innerHTML = this.o.modes.map(([k, name]) =>
         `<button data-m="${k}" aria-pressed="${k === this.mode}">${name}</button>`).join('');
-      this.q('.sim-gears').innerHTML = [1, 2, 3, 4, 5, 6].map(g => {
+      const S = slots();
+      this.q('.sim-gears-h').textContent = S.many;
+      this.q('.sim-gears').setAttribute('aria-label', S.many + ' to simulate');
+      this.q('.reset-btn[data-reset="gear"]').title = `Reset ${S.many.toLowerCase()}: the most used one`;
+      this.q('.sim-gears').innerHTML = S.list.map(g => {
         const on = this.sel.has(g), have = this.gears.includes(g), id = this.o.mapFor(this.mode, g).id;
         return `<button class="chip lp-chip${g === this.gear && this.sel.size > 1 ? ' is-edit' : ''}" data-g="${g}" aria-pressed="${on}" style="--mc:#3f8ce8"` +
-          `${have ? '' : ' disabled'} title="${have ? `Gear ${g} · map ${id}${on && g === this.gear ? ' (edited)' : ''}` : `Gear ${g} is not used in the corners of this log`}">#${g}<span>M${id}</span></button>`;
+          `${have ? '' : ' disabled'} title="${have ? `${S.one} ${g} · map ${id}${on && g === this.gear ? ' (edited)' : ''}` : `${S.one} ${g} is not used in the corners of this log`}">${S.pre}${g}<span>M${id}</span></button>`;
       }).join('');
     }
 
@@ -293,9 +302,9 @@
       // other selected gears with a different map: drawn thin (selected μ level) in their colour, simulated with their map
       const others = [...new Map(selG.filter(gg => gg !== this.gear).map(gg => [this.o.mapFor(this.mode, gg).id, gg])).entries()]
         .filter(([id]) => id !== t.id).map(([id, gg]) => ({ id, gg, t: this.o.mapFor(this.mode, gg) }));
-      this.q('.sim-info').textContent = `${this.o.modeName(this.mode)} ${selG.map(gg => '#' + gg).join(' ')} · map ${[t.id, ...others.map(o => o.id)].join(', ')} · ${all.length.toLocaleString()} samples` +
+      this.q('.sim-info').textContent = `${this.o.modeName(this.mode)} ${selG.map(gg => slots().pre + gg).join(' ')} · map ${[t.id, ...others.map(o => o.id)].join(', ')} · ${all.length.toLocaleString()} samples` +
         (passes != null ? ` · ${passes} pass${passes === 1 ? '' : 'es'}` : '');
-      this.q('.sim-h-top').textContent = `· ${this.o.modeName(this.mode)} #${this.gear} · map ${t.id} · μ ${fmtMu(muRows[mi])} selected` + (editable ? ' (drag its points)' : ' (calculated level)');
+      this.q('.sim-h-top').textContent = `· ${this.o.modeName(this.mode)} ${slots().pre}${this.gear} · map ${t.id} · μ ${fmtMu(muRows[mi])} selected` + (editable ? ' (drag its points)' : ' (calculated level)');
       const x = i => Math.abs(d.lean[i]);
 
       // ---- top: logged slip coloured by μ, the map as on the first three tabs (selected map), the target at the logged μ ----
@@ -356,7 +365,7 @@
       });
       // right-hand labels: the selected and the editable levels boxed in the map colour, calculated ones as text
       const BOX_H = 17, labs = muRows.map((m, r) => ({ m, r, text: 'μ ' + fmtMu(m), color: mc, boxed: !locked.includes(r) || r === mi, y: g.py(t.rows[r][t.rows[r].length - 1]) }))
-        .concat(others.map(o => ({ r: -1, text: `M${o.id} #${o.gg}`, color: this.o.colorFor(o.id), boxed: false, y: g.py(o.t.rows[mi][o.t.rows[mi].length - 1]) })))
+        .concat(others.map(o => ({ r: -1, text: `M${o.id} ${slots().pre}${o.gg}`, color: this.o.colorFor(o.id), boxed: false, y: g.py(o.t.rows[mi][o.t.rows[mi].length - 1]) })))
         .filter(l => (l.r === mi || l.r < 0 ? !H('map') : !H('mu')))   // labels follow what is shown
         .sort((a, b) => a.y - b.y);
       const gap = BOX_H + 2;
@@ -373,7 +382,7 @@
         item('mu', `<i class="sim-sw sim-sw-mu" style="border-color:${mc}"></i>Other μ levels`) +
         item('tgt', `<i class="sim-sw sim-sw-tgt"></i>Slip target at the logged μ`);
 
-      const what = `gear ${selG.join(', ')}, ${corner > 0 ? 'corner ' + corner : 'all corners'}`;
+      const what = `${slots().one.toLowerCase()} ${selG.join(', ')}, ${corner > 0 ? 'corner ' + corner : 'all corners'}`;
       this.q('.sim-top').setAttribute('aria-label', `Logged slip over lean angle, ${what}, with the slip target of map ${t.id} at the logged μ`);
     }
   }

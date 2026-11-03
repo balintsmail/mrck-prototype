@@ -7,6 +7,8 @@
 // The filtered samples go to the graph through opts.onChange({ traces, target }) (see SlipChart._logPath).
 (function () {
   const MU_MIN = -0.25, MU_MAX = 1.6, X_MAX = 70, TGT_MAX = 25.5, GEARS = [1, 2, 3, 4, 5, 6];
+  // gears (STK) or sectors (PRO): see data.js
+  const slots = () => (window.MRCK_SLOTS ? window.MRCK_SLOTS() : { list: GEARS, pre: '#', one: 'Gear', many: 'Gears' });
   const C = { accelLine: '#2a7fe0', accent: '#3f8ce8', log: '#545459', red: '#8b8b92', grid: '#ffffff', muted: '#858588', text: '#ffffff', sel: 'rgba(63,140,232,.16)', lapBand: 'rgba(255,255,255,.035)' };
   // μ colour scale, dark blue (low) → red (high), as in the Lean vs Slip viewer (tools/motec, dark theme);
   // fixed to the μ slider's range, values outside take the end colours
@@ -60,7 +62,7 @@
     <div class="lp-side-body">
       <div class="side-h lp-filters-h">Logged data filters</div>
       <div class="lp-filter">
-        <div class="lp-sub"><span class="side-sub">Gears</span><button class="reset-btn" data-reset="gears" title="Reset gears" aria-label="Reset gears" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
+        <div class="lp-sub"><span class="side-sub lp-gears-h">Gears</span><button class="reset-btn" data-reset="gears" title="Reset gears" aria-label="Reset gears" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
         <div class="chip-list lp-gears" role="group" aria-label="Gears to show"></div>
         ${sw('autoGears', 'Automatically adjust', 'Filter the gears whose slip targets are selected on the graph')}
       </div>
@@ -167,6 +169,8 @@
       this.update();
     }
     _gearDefault() { return this.ctx.gearsAll ? { autoGears: false, gears: new Set() } : { autoGears: true }; }
+    // STK <-> PRO: the "gear" filter becomes the sector filter (d.gear holds the gear or the sector channel, set by app.js)
+    slotsChanged() { Object.assign(this.f, this._gearDefault(), this.f.autoGears ? {} : { gears: new Set() }); this.cache = null; this.update(); }
 
     update() {
       const f = this.f, d = this.d;
@@ -257,7 +261,10 @@
       this.q('.lp-acc-src').textContent = d.slipF2 ? '[G] · ' + d.slipF2Src : '[G] · logged slip (no v_rear / v_ref for Slip_V_Ref_F2)';
       this.q('.lp-red-src').textContent = d.red ? `[Nm] · ${d.redSource}` : '· not in this log';
       // gears
-      this.q('.lp-gears').innerHTML = GEARS.map(g => `<button class="chip" data-g="${g}" aria-pressed="${f.gears.has(g)}" style="--mc:${C.accent}" ${d.gear ? '' : 'disabled title="No Gear channel in this log"'}>${g}</button>`).join('');
+      const S = slots();
+      this.q('.lp-gears-h').textContent = S.many;
+      this.q('.lp-gears').setAttribute('aria-label', S.many + ' to show');
+      this.q('.lp-gears').innerHTML = S.list.map(g => `<button class="chip" data-g="${g}" aria-pressed="${f.gears.has(g)}" style="--mc:${C.accent}" ${d.gear ? '' : `disabled title="No ${S.one} channel in this log"`}>${S.pre === '#' ? g : S.pre + g}</button>`).join('');
       // μ slider
       const pc = v => (v - MU_MIN) / (MU_MAX - MU_MIN) * 100;
       const a = pc(f.muLo), b = pc(f.muHi);

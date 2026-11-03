@@ -185,8 +185,8 @@
         // "RN +2" (more than two); the full list is in the tooltip.
         const shortLabel = items => {
           if (items.length <= 2) return items.map(x => x.name).join(', ');
-          const nums = items.map(x => /^#(\d+)$/.exec(x.name)).filter(Boolean).map(m => +m[1]);
-          if (nums.length === items.length) return `#${Math.min(...nums)}-#${Math.max(...nums)}`;
+          const nums = items.map(x => /^(#|S)(\d+)$/.exec(x.name)).filter(Boolean);   // gears #1 or sectors S1
+          if (nums.length === items.length) { const p = nums[0][1], v = nums.map(m => +m[2]); return `${p}${Math.min(...v)}-${p}${Math.max(...v)}`; }
           return `${items[0].name} +${items.length - 1}`;
         };
         groups.forEach(gr => {

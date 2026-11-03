@@ -88,5 +88,31 @@
     off: SHIFT_STEPS.map(k => +(-k * 0.4).toFixed(1)),
   };
 
-  window.MRCK_DATA = { source: DS ? DS.source : null, MU_ROWS, MU_BASE, targets, VEHICLE_MODES, allocation, settings, SHIFT_STEPS, userShift, log: [] };   // log: MoTeC traces, filled by Add MOTEC data (motec-ld.js)
+  // RCK variant (manual 5.5 / 9): STK allocates a map to each gear, PRO to each of the 15 acceleration sectors of the
+  // track detection. Both allocations are kept; D.allocation is the one of the active variant (switched in app.js).
+  const SECTORS = 15;
+  // PRO maps follow the STK allocation: a sector gets the map its riding mode uses in the gear of that kind of corner.
+  // Corner class from the slowest speed in the sector [km/h]: hairpin (STK #1), slow (#2), medium (#3), fast (#4),
+  // very fast (#5). Rain then gets the lowest maps, Int slightly more open ones, Dry 1 / Dry 2 the highest.
+  const sectorClass = v => (v < 75 ? 0 : v < 95 ? 1 : v < 140 ? 2 : v < 190 ? 3 : 4);
+  const proAlloc = (m, cls) => { const a = cls.map(c => allocation[m][c]); while (a.length < SECTORS) a.push(a[a.length - 1]); return a; };
+  // Example (Paul Ricard, from the Bol d'Or sample log): 13 sectors, each a corner and the straight after it, ending
+  // where the rider brakes for the next one. Classes from the sample's slowest speeds (57 km/h at S13 .. 205 km/h at S3).
+  const EXAMPLE = { lapLen: 5521, ends: [679, 923, 1098, 1271, 1412, 1746, 3258, 3994, 4456, 4725, 4882, 5139, 5521],
+    cls: [2, 2, 4, 2, 1, 0, 3, 3, 2, 1, 3, 2, 0] };
+  const allocPro = {};
+  VEHICLE_MODES.forEach(m => { allocPro[m] = proAlloc(m, EXAMPLE.cls); });
+  // Track detection (manual 9): sector ends [m lap distance]; unused sectors far beyond the lap length.
+  // Off -> the failsafe sector all the time. example: still the untouched example (a loaded log replaces it).
+  const trackDet = { on: true, lapLen: EXAMPLE.lapLen, ends: EXAMPLE.ends.concat(new Array(SECTORS - EXAMPLE.ends.length).fill(99999)),
+    pitEnd: 0, pitSector: 1, initDist: 0, failsafe: 1, example: true };
+  // the allocation columns of the active variant: gears #1..#6 or sectors S1..S15 (read by log-panel.js and sim-view.js)
+  const SLOTS = {
+    stk: { n: 6, pre: '#', one: 'Gear', many: 'Gears' },
+    pro: { n: SECTORS, pre: 'S', one: 'Sector', many: 'Sectors' },
+  };
+  window.MRCK_SLOTS = () => { const s = SLOTS[window.MRCK_DATA.variant]; return Object.assign({ list: Array.from({ length: s.n }, (_, i) => i + 1) }, s); };
+
+  window.MRCK_DATA = { source: DS ? DS.source : null, MU_ROWS, MU_BASE, targets, VEHICLE_MODES, allocation, settings, SHIFT_STEPS, userShift, log: [],
+    variant: 'stk', allocStk: allocation, allocPro, SECTORS, trackDet, sectorClass, proAlloc };   // log: MoTeC traces, filled by Add MOTEC data (motec-ld.js)
 })();

@@ -825,3 +825,69 @@ body.no-scroll { overflow: hidden; }
 .user-side .shift-top .mu-grid { display: grid; grid-template-columns: 1fr; gap: 16px; max-width: none; flex: none; }
 .user-side .shift-pick { order: -1; }                                   /* example map first */
 .user-side .shift-pick select { min-width: 0; width: 100%; }
+/* ---------- header: STK / PRO variant switch, left of the history buttons ---------- */
+.variant-seg { margin-right: 14px; }
+.variant-seg button { height: 26px; padding: 0 10px; color: #c8c8cc; border-color: #4a4a50; font-size: 11px; letter-spacing: .06em; }
+.variant-seg button:hover { color: #fff; border-color: #8a8a90; }
+.variant-seg button[aria-pressed="true"] { color: #fff; background: #3f8ce8; border-color: #3f8ce8; }
+/* ---------- Settings: track detection (PRO) ---------- */
+.set-note { margin: -4px 0 12px; max-width: 640px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.set-sub { margin: 18px 0 8px; font-size: 12px; font-weight: 700; color: var(--text); }
+.td-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 10px 0; }
+.td-off-note, .td-msg { color: var(--muted); font-size: 12px; }
+.td-off-note[hidden] { display: none; }
+.td-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 20px; max-width: 880px; }
+.td-fields label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.td-fields input { height: 28px; width: 100%; box-sizing: border-box; padding: 0 8px; font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 3px; }
+.td-fields input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.td-tbl td { min-width: 56px; text-align: right; }
+.td-tbl td.td-unused { color: var(--muted); }
+#trackPanel.is-off .td-fields, #trackPanel.is-off .td-tbl, #trackPanel.is-off .tp-map { opacity: .45; }
+/* ---------- Track detection tab (PRO): circuit map left, settings + sector table right ---------- */
+.track-panel { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 30px; align-items: start; }
+.track-panel[hidden] { display: none; }
+.tp-main { min-width: 0; position: sticky; top: 12px; }
+.tp-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 30px; margin-bottom: 8px; }
+.tp-sel { color: var(--text); font-size: 12px; font-weight: 600; margin-right: auto; }
+.tp-bar button { display: inline-flex; align-items: center; gap: 4px; background: rgba(255, 255, 255, .2); border-color: transparent; }
+.tp-bar button:hover { background: rgba(255, 255, 255, .05); }
+.tp-bar button[hidden] { display: none; }
+.tp-bar .material-icons { font-size: 16px; }
+.tp-map { position: relative; height: calc(100vh - 190px); min-height: 360px; border: 1px solid var(--grid); border-radius: 4px; }
+.tp-help { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+.tp-side .set-h:first-child { margin-top: 0; }
+.tp-side .td-fields { grid-template-columns: 1fr 1fr; }
+.tm-svg { display: block; touch-action: none; user-select: none; }
+.tm-sec { fill: none; stroke: #fff; stroke-width: 10px; stroke-linecap: butt; stroke-linejoin: round; opacity: .85; pointer-events: none; }
+.tm-sec.is-sel { opacity: 1; stroke: #3f8ce8; }
+.tm-hit { fill: none; stroke: transparent; stroke-width: 24px; cursor: pointer; }
+.tm-hit:hover + .tm-sec, .tm-sec:has(+ .tm-hit:hover) { opacity: 1; }
+.tm-brake, .tm-tpd { fill: none; stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+.tm-brake { stroke: #ffd400; }
+.tm-tpd { stroke: #e22046; }
+.tm-lbl { cursor: pointer; }
+.tm-lbl rect { fill: var(--bg); stroke: #fff; stroke-width: 1.5px; }
+.tm-lbl text { fill: var(--text); font-size: 11px; font-weight: 700; text-anchor: middle; }
+.tm-lbl.is-sel rect { fill: #3f8ce8; stroke: #3f8ce8; }
+.tm-split-hit { stroke: transparent; stroke-width: 18px; }
+.tm-split-line { stroke: var(--bg); stroke-width: 3px; stroke-linecap: butt; pointer-events: none; }   /* a cut through the white track */
+.tm-split circle { fill: #fff; stroke: var(--bg); stroke-width: 2px; }
+.tm-split { cursor: grab; }
+.tm-split:hover .tm-split-line, .tm-split.is-sel .tm-split-line { stroke: #3f8ce8; stroke-width: 4px; }
+.tm-split:hover circle, .tm-split.is-sel circle { fill: #3f8ce8; stroke: #3f8ce8; }
+.is-dragging, .is-dragging .tm-split { cursor: grabbing; }
+.tm-finish .tm-split-line { stroke: var(--bg); stroke-dasharray: 3 2; }
+.tm-finish circle { fill: var(--bg); stroke: none; r: 3; }
+.tm-finish { pointer-events: none; }
+.tm-cut { fill: none; stroke: #fff; stroke-width: 2px; stroke-dasharray: 3 2; pointer-events: none; }
+.tm-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--muted); font-size: 13px; }
+.tm-empty[hidden] { display: none; }
+.tm-empty button { display: inline-flex; align-items: center; gap: 4px; }
+.td-tbl td.row-active { background: rgba(63, 140, 232, .14); }
+@media (max-width: 1000px) { .track-panel { grid-template-columns: 1fr; } .tp-main { position: static; } .tp-map { height: 60vh; } }
+.tp-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 8px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.tp-legend[hidden] { display: none; }
+.tp-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tp-sw { display: inline-block; width: 18px; height: 4px; border-radius: 1px; }
+.tp-sw-br { background: linear-gradient(90deg, rgba(255, 212, 0, .15), #ffd400); }
+.tp-sw-tp { background: linear-gradient(90deg, rgba(226, 32, 70, .15), #e22046); }

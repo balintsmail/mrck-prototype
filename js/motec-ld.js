@@ -125,7 +125,9 @@
     } else { d.red = null; d.redSource = null; }
     d.laps = findLaps(opt('Running Lap Time'), duration);
     d.brake = resample(opt('p_brake_fr'));           // segment starts (braking points)
+    d.tpd = resample(opt('tpd'));                     // throttle grip [%] (Track detection circuit map)
     d.corners = findCorners(d, opt('s_track'));      // also sets d.refLap
+    d.dist = resample(opt('s_track'));                // distance [m], for the lap distance of the PRO track detection (sectors)
     return d;
   }
 
