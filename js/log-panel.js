@@ -57,7 +57,7 @@
     ${sw('show', 'Show logged data', 'Show the imported MoTeC data on the graph')}
     <div class="lp-info"></div>
     <div class="lp-smooth">
-      <div class="lp-sub"><span class="side-sub">Slip smoothing</span><span class="lp-read lp-smooth-read"></span><button class="reset-btn" data-reset="smooth" title="Reset slip smoothing" aria-label="Reset slip smoothing" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
+      <div class="lp-sub"><span class="side-sub lp-smooth-h">Slip smoothing</span><span class="lp-read lp-smooth-read"></span><button class="reset-btn" data-reset="smooth" title="Reset slip smoothing" aria-label="Reset slip smoothing" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
       <input type="range" class="lp-smooth-in" min="1" max="50" step="1" value="${SMOOTH_DEF}" aria-label="Slip smoothing: samples averaged">
     </div>
     <div class="lp-side-body">
@@ -113,8 +113,10 @@
       this.el = el;
       this.o = Object.assign({ onChange() {}, geom: () => null, muRows: [] }, opts);
       this.d = null;
-      this.f = { show: true, autoGears: true, gears: new Set(GEARS), autoMu: false, muLo: MU_MIN, muHi: MU_MAX, t0: 0, t1: 0, corners: new Set(), smooth: SMOOTH_DEF };
-      this.ctx = { visible: true, gears: GEARS, muBand: [-Infinity, Infinity] };
+      this.f = { show: true, autoGears: true, gears: new Set(GEARS), autoMu: false, muLo: MU_MIN, muHi: MU_MAX, t0: 0, t1: 0, corners: new Set(), smooth: SMOOTH_DEF, mdSmooth: SMOOTH_DEF };
+      // smoothKind: what the smoothing slider smooths on this tab: 'slip' (f.smooth) or 'torque' (f.mdSmooth: md_req / md_act
+      // on the Adaptive Rider Request tab). Each keeps its own value, both 10 samples by default.
+      this.ctx = { visible: true, gears: GEARS, muBand: [-Infinity, Infinity], smoothKind: 'slip' };
       el.innerHTML = TEMPLATE;
       this.side = document.createElement('section');
       this.side.className = 'side-block lp-side';
@@ -169,6 +171,7 @@
       if (ctx.gearsAll !== undefined && ctx.gearsAll !== prev) Object.assign(this.f, this._gearDefault());
       this.update();
     }
+    _smoothKey() { return this.ctx.smoothKind === 'torque' ? 'mdSmooth' : 'smooth'; }
     _gearDefault() { return this.ctx.gearsAll ? { autoGears: false, gears: new Set() } : { autoGears: true }; }
     // STK <-> PRO: the "gear" filter becomes the sector filter (d.gear holds the gear or the sector channel, set by app.js)
     slotsChanged() { Object.assign(this.f, this._gearDefault(), this.f.autoGears ? {} : { gears: new Set() }); this.cache = null; this.update(); }
@@ -288,9 +291,12 @@
       }
       const ends = f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9;
       this.q('.lp-mu-read').textContent = ends ? 'all' : `${f.muLo <= MU_MIN + 1e-9 ? '≤ ' : ''}${f.muLo.toFixed(2)} … ${f.muHi >= MU_MAX - 1e-9 ? '≥ ' : ''}${f.muHi.toFixed(2)}`;
-      const sm = this.q('.lp-smooth-in');
-      if (document.activeElement !== sm) sm.value = f.smooth;
-      this.q('.lp-smooth-read').textContent = f.smooth <= 1 ? 'off' : `${f.smooth} samples · ${Math.round(f.smooth / d.rate * 1000)} ms`;
+      const sm = this.q('.lp-smooth-in'), sk = this._smoothKey(), sv = f[sk], name = sk === 'mdSmooth' ? 'Torque smoothing' : 'Slip smoothing';
+      if (document.activeElement !== sm || +sm.value !== sv) sm.value = sv;     // the slider always shows the value in use
+      this.q('.lp-smooth-read').textContent = sv <= 1 ? 'off' : `${sv} samples · ${Math.round(sv / d.rate * 1000)} ms`;
+      this.q('.lp-smooth-h').textContent = name;
+      sm.setAttribute('aria-label', sk === 'mdSmooth' ? 'Torque smoothing (md_req, md_act): samples averaged' : 'Slip smoothing: samples averaged');
+      const rsm = this.q('.reset-btn[data-reset="smooth"]'); rsm.title = 'Reset ' + name.toLowerCase(); rsm.setAttribute('aria-label', rsm.title);
       // laps
       const same = (a0, b0) => Math.abs(a0 - f.t0) < 1e-3 && Math.abs(b0 - f.t1) < 1e-3;
       const fastest = full.length ? full.reduce((p, l) => (l.b - l.a < p.b - p.a ? l : p)) : null;
@@ -302,7 +308,7 @@
       // the track map and the corner segments are made from the best (fastest) full lap
       this.q('.lp-map-src').textContent = d.refLap ? `Best lap · ${d.refLap.name} · ${fmtLap(d.refLap.b - d.refLap.a)}` : '';
       // reset icons: shown when a filter is not in its default state
-      const dflt = { smooth: f.smooth === SMOOTH_DEF, gears: this.ctx.gearsAll ? !f.autoGears && !f.gears.size : f.autoGears, mu: !f.autoMu && f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9,
+      const dflt = { smooth: f[this._smoothKey()] === SMOOTH_DEF, gears: this.ctx.gearsAll ? !f.autoGears && !f.gears.size : f.autoGears, mu: !f.autoMu && f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9,
         time: (td => Math.abs(f.t0 - td.t0) < 1e-3 && Math.abs(f.t1 - td.t1) < 1e-3)(this._timeDefault()), corners: !f.corners.size };
       this.side.querySelectorAll('.reset-btn[data-reset]').forEach(b => { b.hidden = dflt[b.dataset.reset]; });
       this.q('.lp-corners').innerHTML = d.corners.length && !this.track ? `<button class="chip lp-chip" data-c="all" aria-pressed="${!f.corners.size}" style="--mc:${C.accent}">All</button>` +
@@ -354,7 +360,7 @@
         if (l) { this._setRange(+l.dataset.a, +l.dataset.b); return; }
         const rs = e.target.closest('.reset-btn[data-reset]');
         if (rs) {
-          this._set({ smooth: { smooth: SMOOTH_DEF }, gears: this._gearDefault(), mu: { autoMu: false, muLo: MU_MIN, muHi: MU_MAX },
+          this._set({ smooth: { [this._smoothKey()]: SMOOTH_DEF }, gears: this._gearDefault(), mu: { autoMu: false, muLo: MU_MIN, muHi: MU_MAX },
             time: this._timeDefault(), corners: { corners: new Set() } }[rs.dataset.reset]);
           if (rs.dataset.reset === 'smooth') this.q('.lp-smooth-in').value = SMOOTH_DEF;
           return;
@@ -377,7 +383,7 @@
       this.side.addEventListener('click', onClick);
       this.el.addEventListener('click', e => { if (!this.side.contains(e.target)) onClick(e); });   // the side block may be docked inside
 
-      this.q('.lp-smooth-in').addEventListener('input', e => this._set({ smooth: +e.target.value }));   // slip smoothing 1..50 samples
+      this.q('.lp-smooth-in').addEventListener('input', e => this._set({ [this._smoothKey()]: +e.target.value }));   // slip / torque smoothing 1..50 samples
       // μ slider: drag an end, drag the bar between them (moves the range), drag on the track (the nearest end follows),
       // or click a segment between two dots: the range from halfway below a μ level to halfway above it (e.g. 0.3–0.5)
       const range = this.q('.lp-range'), hover = this.q('.lp-seg-hover');

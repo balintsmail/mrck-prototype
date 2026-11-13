@@ -1,25 +1,33 @@
 // ArrView — the Adaptive Rider Request tab: the Rider Request "Limit Setup" (Pre Control Limit curve, RCK25 manual 3.3)
 // of a riding mode and gear against the driving force at the rear tyre contact patch in the imported MoTeC log.
 //  - left column (this.side, docked by app.js like the Simulation's): riding mode and gear selectors; below them the
-//    logged data's own filters (μ, laps, timeline, circuit map / corners: log-panel.js), shared with the other tabs.
+//    Torque smoothing (md_req / md_act) and the logged data's own filters (laps, timeline, circuit map / corners:
+//    log-panel.js), shared with the other tabs. No μ filter here.
 //  - the graph: force [N] over |lean| (70° -> 0°, as Simulation): the limit curve of the selected mode / gears
 //    (dem_scale_select_<mode> -> dem_lim_fxmx_1_15, from the dataset), the logged limit (md_tgt_prectrl as a force, where
 //    it limits), the request force and the actual force calculated from the engine torque, and the ECU's fx_rear_calc.
 //    The legend hides / shows each of them.
-//  - below: the validation of the calculated force against fx_rear_calc, per gear.
 // Force at the contact patch:  F [N] = M [Nm] × i_gear / r_tire_rr [m]   (i_gear = overall ratio crank -> rear wheel:
 // primary × gearbox × rear / front sprocket; r_tire_rr = the ECU's rolling radius of the rear tyre, lean dependent).
 // The Limit Setup curves are applied over lean angle (manual 3.3), so the graph uses the lean axis.
 (function () {
   const MODES = ['Rain', 'Int', 'Dry1', 'Dry2'];          // idx_mode_veh 1..4
   const TPD_MIN = 0;                                       // on the throttle only, as Simulation
-  const MD_VALID = 20;                                     // validation: actual torque above 20 Nm (the ratio is noise near 0)
   const GEARS = [1, 2, 3, 4, 5, 6];
   const COL = { lim: '#f5d846', pre: '#ff4d5e', req: '#ff9f3f', act: '#36b2e3', fx: '#ffffff' };
   const fmtN = v => Math.round(v).toLocaleString('en-US');
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const median = a => { if (!a.length) return NaN; const s = Float64Array.from(a).sort(); return s[s.length >> 1]; };
   const pct = (a, p) => { if (!a.length) return NaN; const s = Float64Array.from(a).sort(); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
+
+  // centred moving average over k samples (as the slip smoothing of log-panel.js); NaN samples are skipped and stay NaN
+  function smooth(src, k) {
+    if (!src || k <= 1) return src;
+    const n = src.length, out = new Float32Array(n), cum = new Float64Array(n + 1), cnt = new Int32Array(n + 1);
+    for (let i = 0; i < n; i++) { const ok = Number.isFinite(src[i]); cum[i + 1] = cum[i] + (ok ? src[i] : 0); cnt[i + 1] = cnt[i] + (ok ? 1 : 0); }
+    const back = Math.floor((k - 1) / 2), fwd = k - 1 - back;
+    for (let i = 0; i < n; i++) { const a = Math.max(0, i - back), b = Math.min(n - 1, i + fwd), c = cnt[b + 1] - cnt[a]; out[i] = Number.isFinite(src[i]) && c ? (cum[b + 1] - cum[a]) / c : NaN; }
+    return out;
+  }
 
   // the Limit Setup curve at |lean| x: linear between the points, the end values outside the axis (lean ascending)
   function limitAt(L, row, x) {
@@ -55,12 +63,10 @@
       <div class="sim-h">Rear wheel force and the Limit Setup <span class="sim-h-sub arr-h-top"></span></div>
       <div class="sim-legend sim-legend-top"></div>
       <div class="sim-plot"><canvas class="arr-top" role="img"></canvas></div>
-      <div class="sim-h">Validation · calculated force vs fx_rear_calc <span class="sim-h-sub arr-h-val"></span></div>
-      <div class="arr-val"></div>
     </div>`;
 
   class ArrView {
-    // opts: { getLog, filters: () => logView.f, modeName: key -> name, riderLimit: () => D.riderLimit | null, source: () => dataset name,
+    // opts: { getLog, filters: () => logView.f, modeName: key -> name, riderLimit: () => D.riderLimit | null,
     //         onSample: button -> load the sample, onBrowse }
     constructor(el, opts) {
       this.el = el; this.o = opts;
@@ -132,9 +138,20 @@
       };
       let preMax = -Infinity;                               // md_tgt_prectrl when it does not limit = the demand map's max. torque
       if (d.mdPre) for (let i = 0; i < n; i++) if (d.mdPre[i] > preMax) preMax = d.mdPre[i];
-      this.F = { req: conv(d.mdReq), act: conv(d.mdAct), pre: conv(d.mdPre), preMax };
+      this.F = { req: conv(d.mdReq), act: conv(d.mdAct), pre: conv(d.mdPre), preMax, conv };
       this.fFor = d;
       return this.F;
+    }
+    // the graph's forces with the Torque smoothing of the left column (f.mdSmooth samples): md_req and md_act are smoothed,
+    // then converted; fx_rear_calc is smoothed the same way so it stays comparable. The logged limit uses
+    // the logged values.
+    _smoothed(d) {
+      const k = Math.max(1, Math.round(this.o.filters().mdSmooth || 1)), F = this._forces(d);
+      if (this.sFor === d && this.sK === k) return this.S;
+      this.S = k <= 1 ? { req: F.req, act: F.act, fx: d.fxCalc }
+        : { req: F.conv(smooth(d.mdReq, k)), act: F.conv(smooth(d.mdAct, k)), fx: smooth(d.fxCalc, k) };
+      this.S.k = k; this.sFor = d; this.sK = k;
+      return this.S;
     }
 
     // gears in the corners of the log; the most used one is selected by default
@@ -158,11 +175,10 @@
       if (!this.sel.has(this.gear)) this.gear = Math.min(...this.sel);
     }
 
-    // samples in the selected corner(s), time section and μ range, on the throttle, as runs of consecutive samples
-    // (a new run where the gear changes); gearOk: null = every gear (validation)
+    // samples in the selected corner(s) and time section (no μ filter), on the throttle, as runs of consecutive samples
+    // (a new run where the gear changes), of the gears gearOk(g) accepts
     _select(d, gearOk) {
       const f = this.o.filters(), gc = this.gearCh(d), F = this._forces(d);
-      const [M0, M1] = LogPanel.MU_RANGE, muLo = f.muLo <= M0 + 1e-9 ? -Infinity : f.muLo, muHi = f.muHi >= M1 - 1e-9 ? Infinity : f.muHi;
       const ranges = (f.corners.size ? d.corners.filter(c => f.corners.has(c.n)) : d.corners).flatMap(c => c.ranges);
       const runs = [];
       ranges.forEach(([a, b]) => {
@@ -170,7 +186,7 @@
         let run = null;
         for (let i = Math.max(0, Math.floor(a * d.rate)); i < Math.min(d.n, Math.ceil(b * d.rate)); i++) {
           const g = gc ? Math.round(gc[i]) : 0;
-          const ok = (!gearOk || gearOk(g)) && Number.isFinite(F.act ? F.act[i] : NaN) && d.mu[i] >= muLo && d.mu[i] <= muHi && (!d.tpd || d.tpd[i] > TPD_MIN);
+          const ok = gearOk(g) && Number.isFinite(F.act ? F.act[i] : NaN) && (!d.tpd || d.tpd[i] > TPD_MIN);
           if (ok && run && gc && g !== Math.round(gc[run[run.length - 1]])) run = null;
           if (ok) { if (!run) runs.push(run = []); run.push(i); } else run = null;
         }
@@ -205,7 +221,7 @@
       if (!d) { this.q('.sim-info').textContent = 'Add MoTeC data to compare.'; return; }
       this._gears(d);
       this._syncPickers(d);
-      const mode = this.curMode(d), RL = this.o.riderLimit(), F = this._forces(d), gc = this.gearCh(d);
+      const mode = this.curMode(d), RL = this.o.riderLimit(), F = this._forces(d);
       const H = k => this.hide.has(k);
       const runs = this._select(d, g => this.sel.has(g)), all = runs.flat();
       const selG = [...this.sel].sort((a, b) => a - b);
@@ -220,11 +236,11 @@
       // value axis: up to the highest curve / force shown, in steps of 1000 N
       let top = 0;
       curves.forEach(c => { if (c.row && !H('lim')) top = Math.max(top, ...c.row); });
-      const vis = ['req', 'act', 'fx'].filter(k => !H(k)).map(k => (k === 'fx' ? d.fxCalc : F[k])).filter(Boolean);
+      const S = this._smoothed(d), vis = ['req', 'act', 'fx'].filter(k => !H(k)).map(k => S[k]).filter(Boolean);
       vis.forEach(a => { const v = pct(all.map(i => a[i]).filter(Number.isFinite), 0.995); if (v > top) top = v; });
       if (!H('pre') && F.pre) all.forEach(i => { if (d.mdPre[i] < F.preMax - 0.5 && F.pre[i] > top) top = F.pre[i]; });
       const Y = { min: 0, max: clamp(Math.ceil((top || 4000) * 1.05 / 1000) * 1000, 2000, 12000), major: 500, label: 1000, minor: 100, fmt: v => fmtN(v) + ' N' };
-      const h = Math.max(320, Math.round(window.innerHeight - (this.q('.arr-top').parentNode.getBoundingClientRect().top + window.scrollY) - 16) - 150);
+      const h = Math.max(320, Math.round(window.innerHeight - (this.q('.arr-top').parentNode.getBoundingClientRect().top + window.scrollY) - 16));
       const c = this.top.begin(h, Y), gr = this.top.g;
       const pts = (arr, color, size, alpha, cond) => {
         c.globalAlpha = alpha; c.fillStyle = color;
@@ -236,9 +252,9 @@
         runs.forEach(run => { c.beginPath(); run.forEach((i, k) => (k ? c.lineTo(gr.px(x(i)), gr.py(arr[i])) : c.moveTo(gr.px(x(i)), gr.py(arr[i])))); c.stroke(); });
         c.globalAlpha = 1;
       };
-      if (!H('fx') && d.fxCalc) pts(d.fxCalc, COL.fx, 2, 0.45);
-      if (!H('act') && F.act) lines(F.act, COL.act, 1.2, 0.75);
-      if (!H('req') && F.req) lines(F.req, COL.req, 1.2, 0.75);
+      if (!H('fx') && S.fx) pts(S.fx, COL.fx, 2, 0.45);
+      if (!H('act') && S.act) lines(S.act, COL.act, 1.2, 0.75);
+      if (!H('req') && S.req) lines(S.req, COL.req, 1.2, 0.75);
       if (!H('pre') && F.pre) pts(F.pre, COL.pre, 4, 0.9, i => d.mdPre[i] < F.preMax - 0.5);   // only where it limits
       if (!H('lim')) curves.slice().reverse().forEach((cv, k, arr) => {
         if (!cv.row) return;
@@ -257,41 +273,9 @@
         item('pre', `<i class="sim-sw arr-sw-pts" style="--c:${COL.pre}"></i>Logged limit · md_tgt_prectrl × i / r, where it limits`, !F.pre) +
         item('req', `<i class="sim-sw arr-sw-ln" style="--c:${COL.req}"></i>Request · md_req × i / r`, !F.req) +
         item('act', `<i class="sim-sw arr-sw-ln" style="--c:${COL.act}"></i>Actual · md_act × i / r`, !F.act) +
-        item('fx', `<i class="sim-sw arr-sw-pts" style="--c:${COL.fx}"></i>fx_rear_calc (logged)`, !d.fxCalc);
+        item('fx', `<i class="sim-sw arr-sw-pts" style="--c:${COL.fx}"></i>fx_rear_calc (logged)`, !d.fxCalc) +
+        `<span class="arr-sm">${S.k > 1 ? `Request, actual and fx_rear_calc smoothed over ${S.k} samples` : 'Not smoothed'}</span>`;
       this.q('.arr-top').setAttribute('aria-label', `Rear wheel force over lean angle, gear ${selG.join(', ')}, with the Limit Setup curve ${curves[0].no ?? ''}`);
-      this._validation(d, F, gc, RL);
-    }
-
-    // per gear, in the selected time section / corners / μ range (every gear): calculated actual force vs fx_rear_calc
-    _validation(d, F, gc, RL) {
-      const el = this.q('.arr-val');
-      if (!F.act || !d.fxCalc) { el.innerHTML = '<p class="arr-note">The log needs md_act, i_gear, r_tire_rr and fx_rear_calc for the validation.</p>'; return; }
-      const runs = this._select(d, null), sp = d.sprockets, fin = sp && sp[0] ? sp[1] / sp[0] : null;
-      const rows = GEARS.map(g => {
-        const ix = runs.flat().filter(i => (!gc || Math.round(gc[i]) === g) && d.mdAct[i] > MD_VALID && Number.isFinite(d.fxCalc[i]));
-        if (!ix.length) return null;
-        const ig = median(ix.map(i => d.iGear[i]));
-        const ratio = median(ix.map(i => d.fxCalc[i] / F.act[i]));
-        const err = ix.map(i => Math.abs(F.act[i] - d.fxCalc[i]));
-        const lim = ix.filter(i => d.mdPre[i] < F.preMax - 0.5).map(i => F.pre[i]);
-        return { g, n: ix.length, ig, pg: fin ? ig / fin : null, ratio, med: median(err), p95: pct(err, 0.95), fmax: ix.reduce((m, i) => Math.max(m, d.fxCalc[i]), -Infinity), lim: lim.length ? median(lim) : null };
-      }).filter(Boolean);
-      const allLim = rows.filter(r => r.lim != null);
-      this.q('.arr-h-val').textContent = `· on the throttle, md_act > ${MD_VALID} Nm, every gear in the selection`;
-      const dsSp = RL && RL.sprockets;
-      el.innerHTML = rows.length ? `
-        <div class="arr-scroll"><table class="sheet arr-tbl" aria-label="Calculated rear wheel force against fx_rear_calc, per gear">
-          <thead><tr><th>Gear</th><th>i_gear<br><span>overall</span></th><th>Primary × gearbox<br><span>i_gear ÷ ${sp ? sp[1] + '/' + sp[0] : '–'}</span></th><th>Samples</th>
-            <th>fx_rear_calc ÷ calc<br><span>median</span></th><th>|Δ| median<br><span>N</span></th><th>|Δ| 95 %<br><span>N</span></th><th>fx_rear_calc max<br><span>N</span></th><th>Logged limit<br><span>N, median</span></th></tr></thead>
-          <tbody>${rows.map(r => `<tr><td>#${r.g}</td><td>${r.ig.toFixed(4)}</td><td>${r.pg ? r.pg.toFixed(4) : '–'}</td><td>${r.n.toLocaleString()}</td>
-            <td>${r.ratio.toFixed(4)}</td><td>${fmtN(r.med)}</td><td>${fmtN(r.p95)}</td><td>${fmtN(r.fmax)}</td><td>${r.lim != null ? fmtN(r.lim) : '–'}</td></tr>`).join('')}</tbody>
-        </table></div>` : '<p class="arr-note">No samples in this selection.</p>';
-      el.innerHTML += `<p class="arr-note">Force at the contact patch: F = torque × i_gear ÷ r_tire_rr. i_gear is the ECU's overall ratio from the crank to the rear wheel
-        (primary × gearbox × rear ÷ front sprocket; checked against n_eng ÷ v_rear × r_tire_rr), r_tire_rr the ECU's rolling radius of the rear tyre
-        (${d.rTire ? pct(Array.from(d.rTire).filter(v => v > 0.1), 0.02).toFixed(3) + '–' + pct(Array.from(d.rTire).filter(v => v > 0.1), 0.98).toFixed(3) + ' m, smaller with lean' : '–'}).
-        Logged sprockets ${sp ? sp[0] + ' / ' + sp[1] : '–'}${dsSp ? `, dataset ${dsSp[0]} / ${dsSp[1]}` : ''}.` +
-        (allLim.length ? ` The logged limit (md_tgt_prectrl) is ${fmtN(median(allLim.map(r => r.lim)))} N wherever it limits.` : '') +
-        (dsSp && sp && (dsSp[0] !== sp[0] || dsSp[1] !== sp[1]) ? ` The log was recorded with another calibration than the dataset (${this.o.source()}), so its limit can differ from the Limit Setup shown.` : '') + '</p>';
     }
   }
 

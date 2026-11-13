@@ -552,7 +552,6 @@
     filters: () => logView.f,                                 // the same μ / laps / timeline / corner filters as Simulation
     modeName: m => MODE_NAMES[m],
     riderLimit: () => D.riderLimit,
-    source: () => D.source || 'the dataset',
     onSample: b => loadSample(b),
     onBrowse: () => browseLog(),
   });
@@ -1500,6 +1499,7 @@
     // Simulation: left column = its selectors, the timeline / circuit map of the logged data and the map details
     // Adaptive Rider Request: the same layout, with its own selectors (no map details)
     document.querySelector('.layout').classList.toggle('sim-mode', tab === 'sim' || tab === 'arr');
+    document.querySelector('.layout').classList.toggle('arr-mode', tab === 'arr');   // no μ filter there (log-panel μ slider hidden)
     $('simSide').hidden = tab !== 'sim';
     $('arrSide').hidden = tab !== 'arr';
     // +- Buttons: map chosen from a dropdown above the graph
@@ -1529,7 +1529,7 @@
     $('log').title = logged ? 'Import another log file' : '';
     $('logClear').hidden = !logged || tab === 'settings';    // log adjusters: in the left column; at the top of the log panel on tabs without one (+- Buttons)
     if (logView.side.parentNode !== $('sideLog')) $('sideLog').appendChild(logView.side);   // log adjusters: always in the left column
-    logView.setContext({ visible: tab !== 'settings', gears: graphGears(), muBand: graphMuBand(), gearsAll: tab === 'maps' || tab === 'user' });
+    logView.setContext({ visible: tab !== 'settings', gears: graphGears(), muBand: graphMuBand(), gearsAll: tab === 'maps' || tab === 'user', smoothKind: tab === 'arr' ? 'torque' : 'slip' });
 
     syncChartTitle(self);
     syncHistory();
