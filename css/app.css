@@ -894,3 +894,18 @@ body.no-scroll { overflow: hidden; }
 .tp-sw { display: inline-block; width: 18px; height: 4px; border-radius: 1px; }
 .tp-sw-br { background: linear-gradient(90deg, rgba(255, 212, 0, .15), #ffd400); }
 .tp-sw-tp { background: linear-gradient(90deg, rgba(226, 32, 70, .15), #e22046); }
+
+/* Adaptive Rider Request (arr-view.js): the Simulation layout (.layout.sim-mode), its own selectors and graph */
+#arrSide[hidden] { display: none; }
+.layout.sim-mode #arrSide { order: 1; }
+.arr-sw-lim { border-top: 3.5px solid #f5d846; border-radius: 2px; }
+.arr-sw-ln { border-top: 2px solid var(--c); }
+.arr-sw-pts { height: 6px; background: radial-gradient(circle, var(--c) 1.5px, transparent 2px) 0 0 / 6px 6px repeat-x; }
+.arr-val { margin: 0 0 24px; }
+.arr-tbl { border-collapse: collapse; font-size: 12px; margin: 0 0 10px; }
+.arr-tbl th, .arr-tbl td { padding: 5px 12px; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, .1); white-space: nowrap; }
+.arr-tbl th { color: var(--muted); font-weight: 700; vertical-align: bottom; }
+.arr-tbl th span { font-weight: 600; opacity: .7; }
+.arr-tbl th:first-child, .arr-tbl td:first-child { text-align: left; }
+.arr-note { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0; max-width: 980px; }
+.arr-scroll { overflow-x: auto; max-width: 100%; }

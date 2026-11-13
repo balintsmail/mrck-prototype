@@ -403,5 +403,6 @@
   }
 
   SimView.targetAt = targetAt;
+  SimView.Plot = Plot;                                         // the lean-axis graph frame, also used by arr-view.js
   window.SimView = SimView;
 })();

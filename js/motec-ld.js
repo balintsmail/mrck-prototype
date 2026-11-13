@@ -128,6 +128,20 @@
     d.tpd = resample(opt('tpd'));                     // throttle grip [%] (Track detection circuit map)
     d.corners = findCorners(d, opt('s_track'));      // also sets d.refLap
     d.dist = resample(opt('s_track'));                // distance [m], for the lap distance of the PRO track detection (sectors)
+    // Adaptive Rider Request tab (arr-view.js), RCK25 channel list: engine torque [Nm] requested by the rider (md_req),
+    // actual (md_act), target of the rider demand torque limitation = Pre Control Limit (md_tgt_prectrl); overall ratio
+    // crank -> rear wheel (i_gear, incl. primary and sprockets), rear tyre rolling radius [m] (r_tire_rr); rear wheel force
+    // [N] calculated by the ECU (fx_rear_calc) and measured (fx_rear_acc); vehicle mode 1..4 (idx_mode_veh); sprockets.
+    d.mdReq = resample(opt('md_req'));
+    d.mdAct = resample(opt('md_act'));
+    d.mdPre = resample(opt('md_tgt_prectrl'));
+    d.iGear = resample(opt('i_gear'));
+    d.rTire = resample(opt('r_tire_rr'));
+    d.fxCalc = resample(opt('fx_rear_calc'));
+    d.fxAcc = resample(opt('fx_rear_acc'));
+    d.vmode = resample(opt('idx_mode_veh'));
+    const one = name => { const c = opt(name); return c && c.n ? c.data[0] : null; };
+    d.sprockets = ld.has('sprocket_fr') && ld.has('sprocket_rr') ? [one('sprocket_fr'), one('sprocket_rr')] : null;
     return d;
   }
 

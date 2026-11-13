@@ -113,6 +113,10 @@
   };
   window.MRCK_SLOTS = () => { const s = SLOTS[window.MRCK_DATA.variant]; return Object.assign({ list: Array.from({ length: s.n }, (_, i) => i + 1) }, s); };
 
-  window.MRCK_DATA = { source: DS ? DS.source : null, MU_ROWS, MU_BASE, targets, VEHICLE_MODES, allocation, settings, SHIFT_STEPS, userShift, log: [],
+  // Rider Request force limit curves (Pre Control Limit, manual 3.3) and their allocation per riding mode / gear:
+  // shown on the Adaptive Rider Request tab (arr-view.js). Not in the dataset: none (the tab says so).
+  const riderLimit = DS && DS.riderLimit ? JSON.parse(JSON.stringify(DS.riderLimit)) : null;
+
+  window.MRCK_DATA = { source: DS ? DS.source : null, riderLimit, MU_ROWS, MU_BASE, targets, VEHICLE_MODES, allocation, settings, SHIFT_STEPS, userShift, log: [],
     variant: 'stk', allocStk: allocation, allocPro, SECTORS, trackDet, sectorClass, proAlloc };   // log: MoTeC traces, filled by Add MOTEC data (motec-ld.js)
 })();

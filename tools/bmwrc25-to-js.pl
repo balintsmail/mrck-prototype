@@ -81,6 +81,15 @@ print "  targets: [\n    " . join(",\n    ", @targets) . ",\n  ],\n";
 print "  allocation: { Rain: " . js($alloc{rain}) . ", Int: " . js($alloc{int}) .
       ", Dry1: " . js($alloc{dry1}) . ", Dry2: " . js($alloc{dry2}) . " },\n";
 print "  userShift: { facStep: $facStep, offStep: $offStep, fac: " . js(\@fac) . ", off: " . js(\@off) . " },\n";
+# Rider Request force limit curves (Pre Control Limit) and their allocation per riding mode / gear (sector 1).
+my $fl = map_of('dem_lim_fxmx_1_15');
+my %sel;
+for my $mode (qw(rain int dry1 dry2)) { $sel{$mode} = [ map { $_->[0] } @{ map_of("dem_scale_select_$mode")->{rows} } ] }
+my ($sfr) = block('characteristic', 'front_sprocket_teeth') =~ m{<value>([^<]*)</value>};
+my ($srr) = block('characteristic', 'rear_sprocket_teeth') =~ m{<value>([^<]*)</value>};
+my $rl = "  riderLimit: { lean: " . js([ map { r($_, 1) } @{ $fl->{x} } ]) . ", curves: " . js([ map { [ map { r($_, 0) } @$_ ] } @{ $fl->{rows} } ]) .
+  ", select: { Rain: " . js($sel{rain}) . ", Int: " . js($sel{int}) . ", Dry1: " . js($sel{dry1}) . ", Dry2: " . js($sel{dry2}) . " }, sprockets: [$sfr,$srr] },\n";
 print "  settings: { reduction: '" . ($red == 0 ? 'retard' : 'cut') . "', reductionRaw: $red, dtcMode: " .
       "{ Rain: $dtc[0], Int: $dtc[1], Dry1: $dtc[2], Dry2: $dtc[3] } },\n";
+print $rl;
 print "};\n";

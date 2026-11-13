@@ -522,7 +522,7 @@
   const logView = new LogPanel($('logPanel'), {
     muRows: D.MU_ROWS,
     geom: () => chart.g,                          // the reduction graph and timeline line up with the slip-target graph
-    onChange(sel) { chart.o.log = sel; renderChart(); if (state.tab === 'sim') simView.render(); },   // renderChart passes showLog, soloActive and the μ filter band
+    onChange(sel) { chart.o.log = sel; renderChart(); if (state.tab === 'sim') simView.render(); if (state.tab === 'arr') arrView.render(); },   // renderChart passes showLog, soloActive and the μ filter band
   });
   // Simulation tab: the slip target at the logged μ, per gear (its Dry 2 map) and corner of the imported log.
   const simView = new SimView($('simPanel'), {
@@ -546,12 +546,23 @@
     },
   });
   $('simSide').appendChild(simView.side);
+  // Adaptive Rider Request tab: the rear wheel force of the imported log against the Limit Setup of a riding mode / gear
+  const arrView = new ArrView($('arrPanel'), {
+    getLog: () => logView.d,
+    filters: () => logView.f,                                 // the same μ / laps / timeline / corner filters as Simulation
+    modeName: m => MODE_NAMES[m],
+    riderLimit: () => D.riderLimit,
+    source: () => D.source || 'the dataset',
+    onSample: b => loadSample(b),
+    onBrowse: () => browseLog(),
+  });
+  $('arrSide').appendChild(arrView.side);
   $('userSide').appendChild($('shiftPick'));              // +- Buttons: example map + factor / offset per level in the left column
   // ↑ / ↓ gear, ← / → corner, unless a field, list or dialog has the keys
   document.addEventListener('keydown', e => {
-    if (state.tab !== 'sim' || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !$('logModal').hidden) return;
+    if ((state.tab !== 'sim' && state.tab !== 'arr') || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || !$('logModal').hidden) return;
     if (document.activeElement && document.activeElement.closest('input, select, textarea, [role="menu"]')) return;
-    if (simView.key(e)) e.preventDefault();
+    if ((state.tab === 'sim' ? simView : arrView).key(e)) e.preventDefault();
   });
 
   function loadLog(buf, name) {
@@ -705,6 +716,7 @@
     Object.keys(data.allocation).forEach(m => { D.allocStk[m] = data.allocation[m]; });   // an STK file: the gear allocation
     Object.assign(D.userShift, data.userShift);
     Object.assign(D.settings, { reduction: data.reduction, dtcMode: data.dtcMode });
+    if (data.riderLimit) D.riderLimit = data.riderLimit;     // Adaptive Rider Request: the file's force limit curves
     D.source = data.desc || f.name.replace(/\.bmwrc25$/i, '');
     imported = { xml, name: f.name };
     undo.length = 0; redo.length = 0;
@@ -1479,15 +1491,17 @@
     $('settingsPanel').hidden = tab !== 'settings';
     // Settings has no left column (no map list, no allocation table): full width
     // no left column on Settings / +- Buttons, nor on Simulation until MoTeC data is loaded (empty state)
-    const noSide = tab === 'settings' || tab === 'track' || (tab === 'sim' && !logView.loaded);
+    const noSide = tab === 'settings' || tab === 'track' || ((tab === 'sim' || tab === 'arr') && !logView.loaded);
     // +- Buttons: left column = example map + factor / offset per level, then the logged data adjusters
     document.querySelector('.layout').classList.toggle('user-mode', tab === 'user');
     $('userSide').hidden = tab !== 'user';
     document.querySelector('.side').hidden = noSide;
     document.querySelector('.layout').classList.toggle('no-side', noSide);
     // Simulation: left column = its selectors, the timeline / circuit map of the logged data and the map details
-    document.querySelector('.layout').classList.toggle('sim-mode', tab === 'sim');
+    // Adaptive Rider Request: the same layout, with its own selectors (no map details)
+    document.querySelector('.layout').classList.toggle('sim-mode', tab === 'sim' || tab === 'arr');
     $('simSide').hidden = tab !== 'sim';
+    $('arrSide').hidden = tab !== 'arr';
     // +- Buttons: map chosen from a dropdown above the graph
     $('shiftPick').hidden = tab !== 'user';
     $('shiftMap').value = self.id;
@@ -1525,12 +1539,14 @@
     if (tableOn) syncTable(self);
     syncPicker();
     // Simulation: its own panel instead of the graph view
-    $('mainView').hidden = state.picker || tab === 'sim' || tab === 'track';
+    $('mainView').hidden = state.picker || tab === 'sim' || tab === 'arr' || tab === 'track';
     $('trackPanel').hidden = tab !== 'track';
     if (tab === 'track') autoSample();
     $('tpLegend').hidden = !logView.loaded;
     $('simPanel').hidden = tab !== 'sim';
-    if (tab === 'sim') { simView.render(); if (logView.loaded) logView._redrawSoon(); }   // its timeline / circuit map sit in the left column
+    if (tab === 'sim') { simView.render(); if (logView.loaded) logView._redrawSoon(); }
+    $('arrPanel').hidden = tab !== 'arr';
+    if (tab === 'arr') { arrView.render(); if (logView.loaded) logView._redrawSoon(); }   // its timeline / circuit map sit in the left column
     renderChart();
   }
 

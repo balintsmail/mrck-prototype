@@ -129,8 +129,18 @@
     const dtcMode = {};
     ['Rain', 'Int', 'Dry1', 'Dry2'].forEach((mode, i) => { dtcMode[mode] = Math.round(tcm.rows[i][0]); });
     const tag = t => { const m = xml.match(new RegExp(`<${t}>([^<]*)</${t}>`)); return m ? m[1] : ''; };
+    // Rider Request force limit curves (dem_lim_fxmx_1_15, lean ascending) and the curve per riding mode / gear (sector 1)
+    let riderLimit = null;
+    if (xml.includes('<map name="dem_lim_fxmx_1_15">')) {
+      const fl = mapOf('dem_lim_fxmx_1_15'), select = {};
+      [['Rain', 'rain'], ['Int', 'int'], ['Dry1', 'dry1'], ['Dry2', 'dry2']].forEach(([mode, key]) => {
+        if (xml.includes(`<map name="dem_scale_select_${key}">`)) select[mode] = mapOf(`dem_scale_select_${key}`).rows.map(row => Math.round(row[0]));
+      });
+      const teeth = n => { const m = xml.match(new RegExp(`<characteristic name="${n}">[\\s\\S]*?<value>([^<]*)</value>`)); return m ? +m[1] : null; };
+      riderLimit = { lean: fl.x.map(r1), curves: fl.rows.map(row => row.map(Math.round)), select, sprockets: [teeth('front_sprocket_teeth'), teeth('rear_sprocket_teeth')] };
+    }
     return { desc: tag('desc'), date: tag('date'), muRows, targets, allocation, userShift,
-      reduction: red && +red[1] !== 0 ? 'cut' : 'retard', dtcMode, notes };
+      reduction: red && +red[1] !== 0 ? 'cut' : 'retard', dtcMode, riderLimit, notes };
   }
 
   window.Bmwrc25 = { exportBmwrc25, importBmwrc25, x25 };
