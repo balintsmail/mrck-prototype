@@ -1737,5 +1737,57 @@
     // legend swatches in the selected line's colour
     $('chartLegend').style.setProperty('--lc', chart.curves && chart.curves.active ? chart.curves.active.color : '#3f8ce8');
   }
-  sync();
+  // --- own URL per tab / sub-tab (links open that page directly; back / forward move between them) ------------------
+  //   #riding-modes/dry-1 · #gears/2 · #sectors/s1 · #all-slip-target-maps/map-7 (or /all) · #plus-minus-buttons ·
+  //   #simulation · #track-detection · #adaptive-rider-request/gear-2 · #settings
+  const SLUG = { modes: 'riding-modes', gears: 'gears', sectors: 'sectors', maps: 'all-slip-target-maps', user: 'plus-minus-buttons',
+    sim: 'simulation', track: 'track-detection', arr: 'adaptive-rider-request', settings: 'settings' };
+  const modeSlug = m => MODE_NAMES[m].toLowerCase().replace(/\s+/g, '-');
+  let applying = false, pendingArrGear = null;
+  function urlHash() {
+    const t = state.tab, s = SLUG[t];
+    if (t === 'modes') return `#${s}/${modeSlug(state.vmode)}`;
+    if (t === 'gears') return `#${s}/${state.cell.gear + 1}`;
+    if (t === 'sectors') return `#${s}/s${state.cell.sec + 1}`;
+    if (t === 'maps') return `#${s}/${noSel() ? 'all' : 'map-' + D.targets[state.targetIndex].id}`;
+    if (t === 'arr' && logView.loaded && arrView.gear) return `#${s}/gear-${arrView.gear}`;
+    return '#' + s;
+  }
+  function updateUrl() {
+    if (applying) return;
+    const h = urlHash();
+    if (h === location.hash) return;
+    try { history[location.hash ? 'pushState' : 'replaceState'](null, '', location.pathname + location.search + h); } catch (e) { /* keep the address */ }
+  }
+  function applyHash() {
+    const [s, sub] = decodeURIComponent(location.hash.slice(1)).toLowerCase().split('/');
+    const tab = Object.keys(SLUG).find(k => SLUG[k] === s);
+    const btn = tab && document.querySelector(`.tabs [role="tab"][data-tab="${tab}"]`);
+    if (!btn || btn.hidden) return;
+    applying = true;
+    try {
+      if (state.tab !== tab) btn.click();
+      if (sub) {
+        if (tab === 'modes') { const i = D.VEHICLE_MODES.findIndex(m => modeSlug(m) === sub); if (i >= 0) selectMode(i); }
+        if (tab === 'gears' && +sub >= 1) selectGear(+sub - 1);
+        if (tab === 'sectors' && /^s\d+$/.test(sub)) selectSec(+sub.slice(1) - 1);
+        if (tab === 'maps') {
+          if (sub === 'all') { state.noSel = true; sync(); }
+          else { const id = +sub.replace('map-', ''); if (D.targets.some(t => t.id === id)) { state.targetIndex = indexOf(id); state.noSel = false; sync(); } }
+        }
+        if (tab === 'arr' && /^gear-\d+$/.test(sub)) { pendingArrGear = +sub.slice(5); arrView.render(); }
+      }
+    } finally { applying = false; }
+  }
+  sync = (orig => () => { orig(); updateUrl(); })(sync);
+  arrView.render = (orig => () => {                          // a linked gear is selected once the log's gears are known
+    orig();
+    if (pendingArrGear && arrView.gears && arrView.gears.includes(pendingArrGear)) { const g = pendingArrGear; pendingArrGear = null; arrView.setGear(g); return; }
+    if (state.tab === 'arr') updateUrl();
+  })(arrView.render.bind(arrView));
+  window.addEventListener('popstate', applyHash);
+  window.addEventListener('hashchange', applyHash);
+  applying = true; sync(); applying = false;                // the linked page first, then the address follows the app
+  applyHash();
+  updateUrl();
 })();
