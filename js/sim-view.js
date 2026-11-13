@@ -41,7 +41,8 @@
 
   // A canvas plot with the slip-target graph's frame: grid, axis labels, lean 70 -> 0 and a value axis Y.
   class Plot {
-    constructor(canvas) { this.cv = canvas; }
+    // lo: the left end of the lean axis: 0 = |lean| 70 -> 0 (default, as Simulation), -70 = signed lean -70 -> +70
+    constructor(canvas, lo) { this.cv = canvas; this.lo = lo || 0; }
     begin(h, Y) {
       const cv = this.cv, W = Math.max(320, cv.parentNode.clientWidth), dpr = window.devicePixelRatio || 1;
       cv.width = Math.round(W * dpr); cv.height = Math.round(h * dpr);
@@ -50,18 +51,19 @@
       c.setTransform(dpr, 0, 0, dpr, 0, 0);
       c.clearRect(0, 0, W, h);
       const g = this.g = { x0: 52, x1: W - 72, y0: 14, y1: h - 30, Y };
-      g.px = x => g.x0 + (X_MAX - x) / X_MAX * (g.x1 - g.x0);
+      const LO = this.lo, sg = LO < 0, span = X_MAX - LO;
+      g.px = x => g.x0 + (sg ? x - LO : X_MAX - x) / span * (g.x1 - g.x0);
       g.py = y => g.y1 - (y - Y.min) / (Y.max - Y.min) * (g.y1 - g.y0);
-      g.ix = px => X_MAX - (px - g.x0) / (g.x1 - g.x0) * X_MAX;
+      g.ix = px => { const u = (px - g.x0) / (g.x1 - g.x0) * span; return sg ? LO + u : X_MAX - u; };
       g.iy = py => Y.min + (g.y1 - py) / (g.y1 - g.y0) * (Y.max - Y.min);
       c.strokeStyle = '#ffffff'; c.lineWidth = 1;
       const line = (a, b, cc, d) => { c.beginPath(); c.moveTo(a, b); c.lineTo(cc, d); c.stroke(); };
       const steps = (st, f) => { for (let k = Math.ceil(Y.min / st - 1e-9); k * st <= Y.max + 1e-9; k++) f(+(k * st).toFixed(4), k); };
       c.setLineDash([1, 3]); c.globalAlpha = 0.15;              // minor: 1° and Y.minor
-      for (let x = 0; x <= X_MAX; x++) if (x % 5) line(Math.round(g.px(x)) + 0.5, g.y0, Math.round(g.px(x)) + 0.5, g.y1);
+      for (let x = LO; x <= X_MAX; x++) if (x % 5) line(Math.round(g.px(x)) + 0.5, g.y0, Math.round(g.px(x)) + 0.5, g.y1);
       steps(Y.minor, v => line(g.x0, Math.round(g.py(v)) + 0.5, g.x1, Math.round(g.py(v)) + 0.5));
       c.setLineDash([1, 2]); c.globalAlpha = 0.3;               // major: 5° and Y.major
-      for (let x = 0; x <= X_MAX; x += 5) line(Math.round(g.px(x)) + 0.5, g.y0, Math.round(g.px(x)) + 0.5, g.y1);
+      for (let x = LO; x <= X_MAX; x += 5) line(Math.round(g.px(x)) + 0.5, g.y0, Math.round(g.px(x)) + 0.5, g.y1);
       steps(Y.major, v => line(g.x0, Math.round(g.py(v)) + 0.5, g.x1, Math.round(g.py(v)) + 0.5));
       c.setLineDash([]);
       if (Y.min < 0) { c.globalAlpha = 0.6; line(g.x0, Math.round(g.py(0)) + 0.5, g.x1, Math.round(g.py(0)) + 0.5); }
@@ -69,7 +71,8 @@
       c.fillStyle = '#ffffff'; c.font = FONT; c.textBaseline = 'middle';
       c.textAlign = 'right'; steps(Y.label, v => c.fillText(Y.fmt(v), g.x0 - 10, g.py(v)));
       c.textAlign = 'center';
-      for (let x = X_MAX; x >= 0; x -= 5) c.fillText(x + '°', g.px(x), g.y1 + 16);
+      const xStep = sg && g.x1 - g.x0 < 700 ? 10 : 5;
+      for (let x = X_MAX; x >= LO; x -= xStep) c.fillText((x < 0 ? '−' + -x : x) + '°', g.px(x), g.y1 + 16);
       c.save(); c.beginPath(); c.rect(g.x0, g.y0 - 1, g.x1 - g.x0, g.y1 - g.y0 + 2); c.clip();   // plot area
       return c;
     }
