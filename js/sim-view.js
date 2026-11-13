@@ -228,6 +228,7 @@
           const ok = gearOk(i) && Number.isFinite(slip[i]) && slip[i] >= 0 && d.mu[i] >= muLo && d.mu[i] <= muHi && (!d.tpd || d.tpd[i] > TPD_MIN);
           // a new run where the gear changes, so each run is simulated with one map
           if (ok && run && d.gear && Math.round(d.gear[i]) !== Math.round(d.gear[run[run.length - 1]])) run = null;
+          if (ok && run && this.o.secAt && this.o.secAt(d, i) !== this.o.secAt(d, run[run.length - 1])) run = null;   // PRO: and where the sector changes
           if (ok) { if (!run) runs.push(run = []); run.push(i); } else run = null;
         }
       });
@@ -361,7 +362,7 @@
       });
       runs.forEach(run => {                                        // the target at the logged μ, per pass: plain 4px white
         if (run.length < 2 || H('tgt')) return;
-        const tr = d.gear ? this.o.mapFor(this.mode, Math.round(d.gear[run[0]])) : t;   // each pass with its gear's map
+        const tr = d.gear ? this.o.mapFor(this.mode, Math.round(d.gear[run[0]]), run[0]) : t;   // each pass with its gear's (and PRO: sector's) map
         c.beginPath();
         // smoothed like the logged slip (Slip smoothing): centred moving average over the neighbouring samples of the pass
         const raw = run.map(i => targetAt(tr, muRows, x(i), d.mu[i])), cum = [0];

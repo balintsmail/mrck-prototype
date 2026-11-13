@@ -1,7 +1,9 @@
 // ArrView — the Adaptive Rider Request tab: the Rider Request "Limit Setup" (Pre Control Limit curve, RCK25 manual 3.3)
 // of the logged riding mode and a gear against the driving force at the rear tyre contact patch in the imported MoTeC log.
-//  - left column (this.side, docked by app.js like the Simulation's): gear selector (the riding mode is the logged one);
-//    the limit adaptation controls; below them the Torque smoothing (md_req / md_act) and the logged data's own filters
+//  - gear: a second row of tabs above the graph (opts.subTabs, the B tabs row of app.js), one map per gear; the riding
+//    mode is the logged one.
+//  - left column (this.side, docked by app.js like the Simulation's): on top the adaptation on / off switch of the gear
+//    (off: the gear keeps its dataset curve); the limit adaptation controls; below them the Torque smoothing (md_req / md_act) and the logged data's own filters
 //    (laps, timeline, circuit map / corners: log-panel.js), shared with the other tabs. No μ filter here.
 //  - the graph: force [N] over the signed lean angle (−70° left … +70° right); the Limit Setup curve is looked up by
 //    |lean|, so it is drawn mirrored. Every sample of the selection, the logged limit, fx_rear_calc and the adapted map
@@ -23,11 +25,11 @@
   const RED_SAMPLES = 5;                                   // a map point adapts on at least 5 reducing samples (50 ms) in its lean window
   const LAPS = 20, LAP_MS = 250;                           // simulated laps; animation: 0.25 s per lap
   const LEAN_DEF = [30, 70];                               // lean angles to work: |lean| from .. to [°]
-  // adaptation parameters: [key, label, min, max, step, default, readout]
+  // adaptation parameters: [key, label, min, max, step, default, note next to the label, unit of the value field]
   const PARAMS = [
-    ['margin', 'Target for adaptive', -10, 20, 1, 10, v => (v > 0 ? `${v} % above the reduction` : v < 0 ? `${-v} % below the reduction` : 'at the reduction')],
-    ['rate', 'Adaptation per lap', 0, 100, 1, 50, v => `${v} % of the difference`],
-    ['step', 'Max. change per lap', 0, 1000, 10, 200, v => `${v} N`],
+    ['margin', 'Target for adaptive', -10, 20, 1, 10, v => (v > 0 ? 'above the reduction' : v < 0 ? 'below the reduction' : 'at the reduction'), '%'],
+    ['rate', 'Adaptation per lap', 0, 100, 1, 50, () => 'of the difference', '%'],
+    ['step', 'Max. change per lap', 0, 1000, 10, 200, () => '', 'N'],
   ];
   const FONT = "700 10px 'Noto Sans', system-ui, sans-serif";
   const fmtN = v => Math.round(v).toLocaleString('en-US');
@@ -57,10 +59,7 @@
 
   const SIDE = `
     <div class="side-h">Adaptive Rider Request</div>
-    <div class="sim-pick">
-      <div class="lp-sub sim-sub"><span class="side-sub">Gears</span><button class="reset-btn" data-reset="gear" title="Reset gears: the most used one" aria-label="Reset gears: the most used one" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
-      <div class="chip-list sim-gears arr-gears" role="group" aria-label="Gears to show"></div>
-    </div>
+    <button class="switch arr-on" role="switch" aria-checked="true"><span class="material-icons" aria-hidden="true">toggle_on</span><span class="arr-on-t">Adaptation</span></button>
     <div class="sim-info"></div>
     <div class="arr-adapt">
       <div class="side-h arr-adapt-h">Limit adaptation</div>
@@ -114,11 +113,19 @@
       this.side.className = 'side-block sim-side arr-side';
       this.side.setAttribute('aria-label', 'Adaptive Rider Request selection');
       this.side.innerHTML = SIDE;
+      // sliders: value fields + scale (range-ui.js)
+      PARAMS.forEach(P => RangeUI.attach(this.side.querySelector(`input[data-p="${P[0]}"]`), { unit: P[7] }));
+      RangeUI.attachDual(this.side.querySelector('input[data-l="lo"]'), this.side.querySelector('input[data-l="hi"]'), { unit: '°' });
+      RangeUI.attach(this.side.querySelector('.arr-lap'), {});
       this.q = s => el.querySelector(s) || this.side.querySelector(s);
       this.top = new SimView.Plot(this.q('.arr-top'), -70);
       this.q('.sim-sample').onclick = e => opts.onSample(e.currentTarget);
       this.q('.sim-browse').onclick = () => opts.onBrowse();
-      this.q('.arr-gears').addEventListener('click', e => { const b = e.target.closest('button[data-g]'); if (b && !b.disabled) this.toggleGear(+b.dataset.g); });
+      // gears: the second row of tabs (app.js leaves the clicks with data-k="arrGear" to this view)
+      if (opts.subTabs) opts.subTabs.addEventListener('click', e => { const b = e.target.closest('button[data-k="arrGear"]'); if (b && !b.disabled && !el.hidden) this.setGear(+b.dataset.v); });
+      // adaptation on / off, per gear (off: the gear keeps its dataset curve)
+      this.off = new Set();
+      this.q('.arr-on').onclick = () => { const g = this.gear; this.off.has(g) ? this.off.delete(g) : this.off.add(g); this.render(); };
       this.side.addEventListener('click', e => {
         const r = e.target.closest('.reset-btn[data-reset]'); if (!r) return;
         if (r.dataset.reset === 'mode') this.mode = null; else if (r.dataset.reset === 'gear') this.autoGear = true; else return;
@@ -217,12 +224,9 @@
       return best >= 1 && c[best] ? MODES[best - 1] : 'Dry2';
     }
     gearCh(d) { return d.gearRaw || d.gear; }               // always the gear: the Limit Setup is per gear (STK)
-    toggleGear(g) {
-      this.autoGear = false;
-      if (!this.sel.has(g)) { this.sel.add(g); this.gear = g; }
-      else if (this.sel.size > 1) { this.sel.delete(g); if (g === this.gear) this.gear = Math.min(...this.sel); }
-      else return;
-      this.render();
+    setGear(g) {
+      if (g === this.gear && !this.autoGear) return;
+      this.autoGear = false; this.sel = new Set([g]); this.gear = g; this.render();
     }
     key(e) {
       const d = this.o.getLog(); if (!d) return false;
@@ -278,7 +282,7 @@
       this.sel = new Set([...this.sel].filter(g => this.gears.includes(g)));
       if (this.autoGear || !this.sel.size) {
         this.autoGear = false;
-        this.gear = this.gears.reduce((a, g) => (this.counts[g] > this.counts[a] ? g : a), this.gears[0]);
+        this.gear = this.gears.includes(2) ? 2 : this.gears.reduce((a, g) => (this.counts[g] > this.counts[a] ? g : a), this.gears[0]);   // 2nd gear by default
         this.sel = new Set([this.gear]);
       }
       if (!this.sel.has(this.gear)) this.gear = Math.min(...this.sel);
@@ -309,13 +313,21 @@
 
     _syncPickers(d) {
       const mode = this.curMode(d);
-      const most = this.gears.reduce((a, g) => (this.counts[g] > this.counts[a] ? g : a), this.gears[0]);
-      this.q('.reset-btn[data-reset="gear"]').hidden = this.sel.size === 1 && this.sel.has(most);
-      setHTML(this.q('.arr-gears'), GEARS.map(g => {
-        const on = this.sel.has(g), have = this.gears.includes(g), no = this.curveNo(mode, g);
-        return `<button class="chip lp-chip${g === this.gear && this.sel.size > 1 ? ' is-edit' : ''}" data-g="${g}" aria-pressed="${on}" style="--mc:#3f8ce8"` +
-          `${have ? '' : ' disabled'} title="${have ? `Gear ${g} · its own map, starting from Limit Setup curve ${no ?? '–'}` : `Gear ${g} is not used in the corners of this log`}">#${g}<span>L${no ?? '–'}</span></button>`;
-      }).join(''));
+      const st = this.o.subTabs;
+      if (st && !this.el.hidden) {
+        st.setAttribute('aria-label', 'Gears');
+        setHTML(st, GEARS.map(g => {
+          const have = this.gears.includes(g), no = this.curveNo(mode, g);
+          return `<button role="tab" data-k="arrGear" data-v="${g}" aria-selected="${g === this.gear}"${have ? '' : ' disabled'}` +
+            ` title="${have ? `Gear ${g} · its own map, starting from Limit Setup curve ${no ?? '–'}${this.off.has(g) ? ' · adaptation off' : ''}` : `Gear ${g} is not used in the corners of this log`}">` +
+            `Gear ${g}${this.off.has(g) ? ' <span class="arr-tab-off">off</span>' : ''}</button>`;
+        }).join(''));
+      }
+      const on = !this.off.has(this.gear), sw = this.q('.arr-on');
+      sw.setAttribute('aria-checked', on);
+      sw.title = `Adaptation in gear ${this.gear} on / off (off: the gear keeps its dataset curve)`;
+      sw.querySelector('.material-icons').textContent = on ? 'toggle_on' : 'toggle_off';
+      sw.querySelector('.arr-on-t').textContent = `Adaptation in gear ${this.gear}`;
     }
 
     // ---- limit adaptation --------------------------------------------------
@@ -329,7 +341,8 @@
     // reduction there) take that point's new value. Points outside the lean angles to work keep the dataset value.
     _adapt(d, RL, cv) {
       const S = this._smoothed(d), p = this.p, f = this.o.filters();
-      const key = [cv.g, cv.no, S.k, f.t0, f.t1, p.lo, p.hi, p.margin, p.rate, p.step, cv.row.join()].join('|');
+      const off = this.off.has(cv.g);
+      const key = [cv.g, off, cv.no, S.k, f.t0, f.t1, p.lo, p.hi, p.margin, p.rate, p.step, cv.row.join()].join('|');
       if (this.adFor === d && this.adKey === key) return this.ad;
       const L = RL.lean, n = L.length, win = L.map((l, j) => [j ? (L[j - 1] + l) / 2 : 0, j < n - 1 ? (l + L[j + 1]) / 2 : 90]);
       const gc = this.gearCh(d), red = i => (d.red ? d.red[i] : d.mdReq[i] - d.mdAct[i]);
@@ -340,7 +353,7 @@
         if (j >= 0) v[j].push(S.act[i]);
       }
       const fr = v.map(a => (a.length >= RED_SAMPLES ? median(a) : null));
-      const on = j => L[j] >= p.lo && L[j] <= p.hi;
+      const on = j => !off && L[j] >= p.lo && L[j] <= p.hi;   // adaptation off: every point keeps the dataset value
       let last = -1; fr.forEach((v, j) => { if (v != null && on(j)) last = j; });
       const base = cv.row, maps = [base.slice()];
       let cur = base.slice();
@@ -355,7 +368,7 @@
         maps.push(cur);
       }
       const lap = d.laps.find(l => Math.abs(l.a - f.t0) < 0.05 && Math.abs(l.b - f.t1) < 0.05);
-      this.ad = { maps, fr, on, src: lap ? lap.name : 'the selected time section' }; this.adFor = d; this.adKey = key;
+      this.ad = { maps, fr, on, off, src: lap ? lap.name : 'the selected time section' }; this.adFor = d; this.adKey = key;
       return this.ad;
     }
 
@@ -373,12 +386,12 @@
       iLo.style.zIndex = lo > 35 ? 2 : '';                    // both ends at the top: the "from" thumb stays reachable
       const fill = this.side.querySelector('.arr-dual-fill');
       fill.style.setProperty('--a', (lo / 70 * 100) + '%'); fill.style.setProperty('--b', (hi / 70 * 100) + '%');
-      this.side.querySelector('[data-r="lean"]').textContent = `|lean| ${lo}° … ${hi}°`;
+      this.side.querySelector('[data-r="lean"]').textContent = '|lean|, both sides';
       this.side.querySelector('.reset-btn[data-reset="lean"]').hidden = lo === LEAN_DEF[0] && hi === LEAN_DEF[1];
       const lapIn = this.q('.arr-lap');
       if (+lapIn.value !== this.lap) lapIn.value = this.lap;
-      this.q('.arr-lap-read').textContent = `${this.lap} / ${LAPS}` + (ad ? ` · data: ${ad.src}` : '');
-      this.q('.arr-adapt').classList.toggle('is-off', !ad);
+      this.q('.arr-lap-read').textContent = `of ${LAPS}` + (ad ? ` · data: ${ad.src}` : '');
+      this.q('.arr-adapt').classList.toggle('is-off', !ad || ad.off);
       this._syncPlay();
     }
 
@@ -405,21 +418,25 @@
       const curves = [this.gear, ...selG.filter(g => g !== this.gear)].map(g => { const no = this.curveNo(mode, g); return { no, g, row: this.curve(no) }; });
       const cv0 = curves[0];
       const missing = !F.act ? 'This log has no md_act / i_gear / r_tire_rr: the force cannot be calculated.' : '';
-      this.q('.sim-info').textContent = missing || `${this.o.modeName(mode)} (logged) ${selG.map(g => '#' + g).join(' ')} · every gear has its own map · ${all.length.toLocaleString()} samples`;
+      this.q('.sim-info').textContent = missing || `${this.o.modeName(mode)} (logged) · gear ${this.gear} · every gear has its own map · ${all.length.toLocaleString()} samples`;
       const S = this._smoothed(d);
       const ad = cv0.row ? this._adapt(d, RL, cv0) : null, adRow = ad ? ad.maps[this.lap] : null;
       this._syncAdapt(ad);
       this.q('.arr-h-top').textContent = `· ${this.o.modeName(mode)} #${this.gear} · map of gear ${this.gear}` +
-        (cv0.row ? ` (from curve ${cv0.no}) · after lap ${this.lap}` : cv0.no ? ` · curve ${cv0.no}: library curve in the ECU dataset, values not in the file` : ' · no Limit Setup in this dataset');
+        (cv0.row ? ` (from curve ${cv0.no})` + (ad.off ? ' · adaptation off' : ` · after lap ${this.lap}`) : cv0.no ? ` · curve ${cv0.no}: library curve in the ECU dataset, values not in the file` : ' · no Limit Setup in this dataset');
 
-      // value axis: up to the highest curve / force shown, in steps of 1000 N
-      let top = 0;
-      curves.forEach(c => { if (c.row) top = Math.max(top, ...c.row); });
-      if (ad) ad.maps.slice(0, this.lap + 1).forEach(m => { top = Math.max(top, ...m); });
-      const vis = ['req', 'act', 'fx'].filter(k => !H(k)).map(k => S[k]).filter(Boolean);
-      vis.forEach(a => { const v = pct(all.map(i => a[i]).filter(Number.isFinite), 0.995); if (v > top) top = v; });
-      if (!H('pre') && F.pre) all.forEach(i => { if (d.mdPre[i] < F.preMax - 0.5 && F.pre[i] > top) top = F.pre[i]; });
-      const Y = { min: 0, max: clamp(Math.ceil((top || 4000) * 1.05 / 1000) * 1000, 2000, 12000), major: 500, label: 1000, minor: 100, fmt: v => fmtN(v) + ' N' };
+      // value axis: the same for every gear (and every lap / legend toggle): up to the highest dataset curve of any gear
+      // and the forces of the selection in all gears, in steps of 1000 N
+      const f = this.o.filters(), yKey = [mode, S.k, f.t0, f.t1, [...f.corners].sort().join()].join('|');
+      if (this.yFor !== d || this.yKey !== yKey) {
+        let top = 0;
+        GEARS.forEach(g => { const row = this.curve(this.curveNo(mode, g)); if (row) top = Math.max(top, ...row); });
+        const every = this._select(d, () => true).flat();
+        ['req', 'act', 'fx'].map(k => S[k]).filter(Boolean).forEach(a => { const v = pct(every.map(i => a[i]).filter(Number.isFinite), 0.995); if (v > top) top = v; });
+        if (F.pre) every.forEach(i => { if (d.mdPre[i] < F.preMax - 0.5 && F.pre[i] > top) top = F.pre[i]; });
+        this.yMax = clamp(Math.ceil((top || 4000) * 1.05 / 1000) * 1000, 2000, 12000); this.yFor = d; this.yKey = yKey;
+      }
+      const Y = { min: 0, max: this.yMax, major: 500, label: 1000, minor: 100, fmt: v => fmtN(v) + ' N' };
 
       // shared drawing: the curve over −70 … +70 (mirrored, |lean|), the lean angles to work, their handles
       const curvePath = (c, gr, row) => { c.beginPath(); for (let lx = -70; lx <= 70; lx += 0.5) { const X = gr.px(lx), Yv = gr.py(limitAt(RL.lean, row, Math.abs(lx))); lx === -70 ? c.moveTo(X, Yv) : c.lineTo(X, Yv); } };
@@ -464,6 +481,13 @@
         curvePath(c, gr, cv.row); c.strokeStyle = COL.lim; c.lineWidth = 1.5; c.setLineDash([6, 4]); c.stroke(); c.setLineDash([]);
       });
       if (cv0.row && !H('base')) dashed(c, gr, cv0.row);
+      if (ad && !ad.off && !H('steps')) {                         // the maps after the earlier laps: dotted, older ones fainter
+        for (let k = 1; k < this.lap; k++) {
+          curvePath(c, gr, ad.maps[k]); c.strokeStyle = COL.lim; c.lineWidth = 1.2; c.lineJoin = 'round';
+          c.globalAlpha = 0.25 + 0.5 * k / this.lap; c.setLineDash([1.5, 3]); c.stroke();
+        }
+        c.setLineDash([]); c.globalAlpha = 1;
+      }
       if (adRow && !H('lim')) {                                  // the adapted map after this.lap laps: bold, its points
         curvePath(c, gr, adRow); c.strokeStyle = COL.lim; c.lineWidth = 3.5; c.lineJoin = 'round'; c.stroke();
         RL.lean.forEach((lx, j) => [-1, 1].forEach(sg => {
@@ -477,10 +501,11 @@
         RL.lean.forEach((lx, j) => { if (ad.on(j)) [-1, 1].forEach(sg => { const Yv = gr.py(adRow[j]); c.fillText(fmtN(adRow[j]), gr.px(sg * lx), Yv - 14 < gr.y0 + 20 ? Yv + 14 : Yv - 14); }); });
       }
       handles(c, gr);
-      if (!H('lim')) curves.forEach((cv, k) => { const row = k === 0 ? adRow : cv.row; if (row) this.top.rightLabel(k === 0 ? `#${cv.g} · lap ${this.lap}` : `#${cv.g}`, gr.py(limitAt(RL.lean, row, 70)) + k * 19, COL.lim, k === 0, 17); });
+      if (!H('lim')) curves.forEach((cv, k) => { const row = k === 0 ? adRow : cv.row; if (row) this.top.rightLabel(k === 0 ? `#${cv.g}${ad && ad.off ? ' · off' : ` · lap ${this.lap}`}` : `#${cv.g}`, gr.py(limitAt(RL.lean, row, 70)) + k * 19, COL.lim, k === 0, 17); });
 
       setHTML(this.q('.arr-legend-f'),
-        item('lim', `<i class="sim-sw arr-sw-lim"></i>Map of gear ${this.gear} after lap ${this.lap} (adapted)`, !cv0.row) +
+        item('lim', `<i class="sim-sw arr-sw-lim"></i>Map of gear ${this.gear} ${ad && ad.off ? '(adaptation off)' : `after lap ${this.lap} (adapted)`}`, !cv0.row) +
+        item('steps', `<i class="sim-sw arr-sw-step"></i>After each earlier lap`, !ad || ad.off || this.lap < 2) +
         item('base', `<i class="sim-sw arr-sw-base"></i>Curve ${cv0.no ?? '–'} in the dataset`, !cv0.row) +
         item('pre', `<i class="sim-sw arr-sw-pts" style="--c:${COL.pre}"></i>Logged limit · md_tgt_prectrl × i / r, where it limits`, !F.pre) +
         item('req', `<i class="sim-sw arr-sw-ln" style="--c:${COL.req}"></i>Request · md_req × i / r`, !F.req) +

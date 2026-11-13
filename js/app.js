@@ -8,12 +8,13 @@
   const SL = () => window.MRCK_SLOTS();
   const slotTag = gi => SL().pre + (gi + 1);
   // slot indices as tags, runs of 3 or more joined: S1–S15, #1 #2
-  const slotTags = gis => {
+  const runTags = (gis, tag) => {
     const out = [];
     gis.forEach(gi => { const r = out[out.length - 1]; if (r && gi === r[1] + 1) r[1] = gi; else out.push([gi, gi]); });
-    return out.flatMap(([a, b]) => (b - a >= 2 ? [`${slotTag(a)}–${slotTag(b)}`] : a === b ? [slotTag(a)] : [slotTag(a), slotTag(b)]));
+    return out.flatMap(([a, b]) => (b - a >= 2 ? [`${tag(a)}–${tag(b)}`] : a === b ? [tag(a)] : [tag(a), tag(b)]));
   };
-  const usedSlots = (m, id) => D.allocation[m].map((x, i) => (x === id ? i : -1)).filter(i => i >= 0);
+  const slotTags = gis => runTags(gis, slotTag);
+  const usedSlots = (m, id) => gearLine(m).map((x, i) => (x === id ? i : -1)).filter(i => i >= 0);
   // 15 sector colours along the gear palette
   const SECTOR_COLORS = (() => {
     const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), n = D.SECTORS;
@@ -23,14 +24,25 @@
       return '#' + a.map((v, j) => Math.round(v + (b[j] - v) * f).toString(16).padStart(2, '0')).join('');
     });
   })();
-  const slotColors = () => (D.variant === 'pro' ? SECTOR_COLORS : GEAR_COLORS);
+  const slotColors = () => GEAR_COLORS;               // the graph compares gears in STK and PRO
   const $ = id => document.getElementById(id);
+  // PRO: the sector is a third dimension above the gear: allocPro[mode][sector][gear]; STK: allocStk[mode][gear].
+  // state.cell = { mode, gear, sec } is the allocation cell in focus (sec: PRO only). A(m, g, s) reads a cell.
+  const pro = () => D.variant === 'pro';
+  const A = (m, g, s = state.cell.sec) => (pro() ? D.allocPro[m][s][g] : D.allocStk[m][g]);
+  const setA = (m, g, s, id) => { if (pro()) D.allocPro[m][s][g] = id; else D.allocStk[m][g] = id; };
+  const secTag = s => 'S' + (s + 1);
+  const secSuffix = () => (pro() ? ' · ' + secTag(state.cell.sec) : '');
+  const nSec = () => D.trackDet.ends.filter(x => x < 99999).length;
+  // the graph's gear comparison: the maps of a riding mode along the gears (at the sector in focus in PRO)
+  const lineMode = () => (state.tab === 'sectors' ? state.cell.mode : state.vmode);
+  const gearLine = (m = lineMode()) => SL().list.map((g, gi) => A(m, gi));
 
   const state = { tab: 'modes', targetIndex: 0, muIndex: D.MU_BASE, vmode: 'Dry1' };
   // Start with no map selected on Modes / Gears / All slip target maps: every map is drawn the same
   // until one is picked (line, label, map list, allocation cell). Picking a mode or gear does not select a map.
   state.noSel = true;
-  const noSel = () => state.noSel && ['modes', 'gears', 'maps'].includes(state.tab);
+  const noSel = () => state.noSel && ['modes', 'gears', 'sectors', 'maps'].includes(state.tab);
   const undo = [], redo = [];
   const snapshot = () => JSON.stringify(D.targets[state.targetIndex]);
   const restore = (json, idx) => { D.targets[idx] = JSON.parse(json); };
@@ -50,11 +62,11 @@
       state.noSel = false;
       state.targetIndex = indexOf(id);
       if (state.tab === 'gears') {
-        const m = D.VEHICLE_MODES.find(x => D.allocation[x][state.cell.gear] === id);
-        if (m) state.cell = { mode: m, gear: state.cell.gear };
+        const m = D.VEHICLE_MODES.find(x => A(x, state.cell.gear) === id);
+        if (m) state.cell = { ...state.cell, mode: m };
       } else {
-        const gi = D.allocation[state.vmode].indexOf(id);
-        if (gi >= 0) state.cell = { mode: state.vmode, gear: gi };
+        const gi = gearLine().indexOf(id);
+        if (gi >= 0) state.cell = { ...state.cell, mode: lineMode(), gear: gi };
       }
       sync();
     },
@@ -62,16 +74,16 @@
 
   // Every undo entry records where and what changed (shown in the Changes panel) plus a snapshot:
   // map edits { map, json }, allocation edits (gear -> map) { alloc }.
-  const cellName = (mode, gear) => `${MODE_NAMES[mode] || mode} ${slotTag(gear)}`;
+  const cellName = (mode, gear, sec) => `${MODE_NAMES[mode] || mode} ${slotTag(gear)}${pro() ? ' ' + secTag(sec ?? state.cell.sec) : ''}`;
   function where() {
     const t = D.targets[state.targetIndex];
-    if (state.tab === 'modes') {
-      const g = slotTags(usedSlots(state.vmode, t.id));
-      if (g.length) return `${MODE_NAMES[state.vmode]} ${g.join(', ')}`;
+    if (state.tab === 'modes' || state.tab === 'sectors') {
+      const m = lineMode(), g = slotTags(usedSlots(m, t.id));
+      if (g.length) return `${MODE_NAMES[m]} ${g.join(', ')}${secSuffix()}`;
     }
     if (state.tab === 'gears') {
-      const ms = D.VEHICLE_MODES.filter(m => D.allocation[m][state.cell.gear] === t.id).map(m => MODE_NAMES[m]);
-      if (ms.length) return `${ms.join(', ')} ${slotTag(state.cell.gear)}`;
+      const ms = D.VEHICLE_MODES.filter(m => A(m, state.cell.gear) === t.id).map(m => MODE_NAMES[m]);
+      if (ms.length) return `${ms.join(', ')} ${slotTag(state.cell.gear)}${secSuffix()}`;
     }
     return `Map ${t.id}`;
   }
@@ -88,7 +100,7 @@
     if (!editedMaps.has(id)) { editedMaps.add(id); track('action', `Edit map ${id}`); }
     record({ label: where(), desc: `Map ${id} · ${desc || 'slip target edited'}`, map: state.targetIndex, json: snapshot() });
   }
-  function pushAllocUndo(label, desc) { if (D.variant === 'pro') D.trackDet.example = false; record({ label, desc, alloc: JSON.stringify(D.allocation), variant: D.variant }); }
+  function pushAllocUndo(label, desc) { if (pro()) D.trackDet.example = false; record({ label, desc, alloc: JSON.stringify(D.allocation), variant: D.variant }); }
 
   // --- mu line settings (All slip target maps) ---
   // Degressive: μ 1.00, max (1.60) and min (-0.25) are edited, the levels between follow a degression.
@@ -183,6 +195,7 @@
     else if (m.mode === 'point') html = '<div class="mu-block"><div class="mu-cap">Degression per target point</div><div class="mu-grid">' +
       t.lean.map((x, j) => ctl('deg', j, x + '°')).join('') + '</div></div>';
     $('muTables').innerHTML = html;
+    $('muTables').querySelectorAll('input[type="range"]').forEach(r => RangeUI.attach(r, { txt: r.parentNode.querySelector('input[type="text"]') }));   // scale + checked value field
     $('muTables').querySelectorAll('input').forEach(inp => {
       const v = valueOf(inp); inp.value = inp.type === 'range' ? v : fmtVal(v, SLIDER[inp.dataset.kind]);
     });
@@ -199,11 +212,13 @@
       // remember what the user picked in the left column of the tab being left
       if (state.tab === 'modes') state.memMode = state.vmode;
       if (state.tab === 'gears') state.memGear = state.cell.gear;
+      if (state.tab === 'sectors') state.memSec = state.cell.sec;
       state.tab = b.dataset.tab; state.picker = false;
-      // when a tab is opened: the last pick on that tab, else the defaults Riding modes -> Dry 1, Gears -> #2
-      if (state.tab === 'modes') { const m = state.memMode || 'Dry1'; state.vmode = m; state.cell = { mode: m, gear: state.cell.gear }; }
-      if (state.tab === 'gears') state.cell = { mode: state.cell.mode, gear: state.memGear ?? 1 };
-      if (state.tab === 'user') state.targetIndex = indexOf(D.allocation.Dry1[1]);   // +- Buttons: the map of Dry 1 #2
+      // when a tab is opened: the last pick on that tab, else the defaults Riding modes -> Dry 1, Gears -> #2, Sectors -> S1
+      if (state.tab === 'modes') { const m = state.memMode || 'Dry1'; state.vmode = m; state.cell = { ...state.cell, mode: m }; }
+      if (state.tab === 'gears') state.cell = { ...state.cell, gear: state.memGear ?? 1 };
+      if (state.tab === 'sectors') state.cell = { ...state.cell, sec: Math.min(state.memSec ?? 0, Math.max(0, nSec() - 1)) };
+      if (state.tab === 'user') state.targetIndex = indexOf(A('Dry1', 1));   // +- Buttons: the map of Dry 1 #2
       sync();
       track('tab');
     };
@@ -212,16 +227,23 @@
   // Gears view: the maps the 4 vehicle modes use in one gear, one colour per mode.
   const MODE_COLORS = { Rain: '#3f8ce8', Int: '#3fa8a4', Dry1: '#e5a634', Dry2: '#d9354b' };
   const MODE_SHORT = { Rain: 'RN', Int: 'IN', Dry1: 'D1', Dry2: 'D2' };
-  const gearColumn = () => D.VEHICLE_MODES.map(m => D.allocation[m][state.cell.gear]);
+  const gearColumn = () => D.VEHICLE_MODES.map(m => A(m, state.cell.gear));
   const gearSeries = () => D.VEHICLE_MODES.map(m => ({
-    id: D.allocation[m][state.cell.gear], name: MODE_SHORT[m], desc: MODE_NAMES[m],   // graph label short (RN / IN / D1 / D2), full name in the tooltip
+    id: A(m, state.cell.gear), name: MODE_SHORT[m], desc: MODE_NAMES[m],   // graph label short (RN / IN / D1 / D2), full name in the tooltip
     color: MODE_COLORS[m] || '#3f8ce8',
   }));
   // Left column (Gears view): gears as vertical tabs, each showing the map every mode uses.
   function selectGear(gi) {
     gi = Math.max(0, Math.min(SL().n - 1, gi));
-    state.cell = { mode: state.cell.mode, gear: gi };
-    state.targetIndex = indexOf(D.allocation[state.cell.mode][gi]);
+    state.cell = { ...state.cell, gear: gi };
+    state.targetIndex = indexOf(A(state.cell.mode, gi));
+    sync();
+  }
+  // PRO Sectors tab: the sector in focus (the second row of tabs)
+  function selectSec(s) {
+    s = Math.max(0, Math.min(nSec() - 1, s));
+    state.cell = { ...state.cell, sec: s };
+    state.targetIndex = indexOf(A(state.cell.mode, state.cell.gear, s));
     sync();
   }
   function buildGearList() {
@@ -294,6 +316,7 @@
     syncShift(); renderChart();
   }
   Object.entries(SHIFT).forEach(([kind, S]) => {
+    RangeUI.attach($(S.slider), { txt: $(S.txt) });                 // scale + checked value field (range-ui.js)
     $(S.slider).addEventListener('input', () => fillShift(kind, +$(S.slider).value));
     $(S.txt).addEventListener('input', () => { const v = parseFloat($(S.txt).value.replace(',', '.')); if (Number.isFinite(v)) fillShift(kind, S.q ? round(Math.round(v / S.q) * S.q, 3) : v); });   // offset: 0.1 % steps
     $(S.txt).addEventListener('blur', () => { $(S.txt).value = fmtStep(US[S.step]); });
@@ -350,7 +373,7 @@
   function selectMode(i) {
     const m = D.VEHICLE_MODES[Math.max(0, Math.min(D.VEHICLE_MODES.length - 1, i))];
     state.vmode = m;
-    state.cell = { mode: m, gear: state.cell.gear };
+    state.cell = { ...state.cell, mode: m };
     sync();
   }
   $('modeList').innerHTML = D.VEHICLE_MODES.map((m, i) =>
@@ -379,21 +402,24 @@
   // B tabs: the left-column navigation (riding modes / gears / maps) as a second row of tabs.
   function syncSubTabs(on, self) {
     const el = $('subTabs');
-    el.hidden = !on;
+    el._html = null;                                          // the Adaptive Rider Request tab fills it itself (arr-view.js)
+    el.hidden = !on && !(state.tab === 'arr' && logView.loaded);
     if (!on) return;
     const items = state.tab === 'modes' ? ['Dry1', 'Dry2', 'Rain', 'Int'].map(m => ({ k: 'mode', v: D.VEHICLE_MODES.indexOf(m), label: MODE_NAMES[m], sel: m === state.vmode }))
       : state.tab === 'gears' ? SL().list.map((g, gi) => ({ k: 'gear', v: gi, label: slotTag(gi), sel: gi === state.cell.gear }))
+      : state.tab === 'sectors' ? Array.from({ length: nSec() }, (_, s) => ({ k: 'sec', v: s, label: secTag(s), sel: s === state.cell.sec }))
       : [{ k: 'all', v: 0, label: '<i class="sw sw-all"></i>All', sel: noSel() },   // All: no map selected, every map shown
          ...D.targets.map(t => ({ k: 'map', v: t.id, label: `<i class="sw" style="background:${mapColor(t.id)}"></i>Map ${t.id}`, sel: !noSel() && t.id === self.id }))];
-    el.setAttribute('aria-label', state.tab === 'modes' ? 'Riding modes' : state.tab === 'gears' ? SL().many : 'Slip target maps');
+    el.setAttribute('aria-label', state.tab === 'modes' ? 'Riding modes' : state.tab === 'gears' ? SL().many : state.tab === 'sectors' ? 'Sectors' : 'Slip target maps');
     el.innerHTML = items.map(it => `<button role="tab" data-k="${it.k}" data-v="${it.v}" aria-selected="${it.sel}">${it.label}</button>`).join('');
   }
   $('subTabs').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
+    const b = e.target.closest('button'); if (!b || b.dataset.k === 'arrGear') return;   // gears of Adaptive Rider Request: arr-view.js
     const v = +b.dataset.v;
     if (b.dataset.k === 'all') { state.noSel = true; sync(); return; }
     if (b.dataset.k === 'mode') selectMode(v);
     else if (b.dataset.k === 'gear') selectGear(v);
+    else if (b.dataset.k === 'sec') selectSec(v);
     else { state.targetIndex = indexOf(v); state.noSel = false; sync(); }
   });
   $('subTabs').addEventListener('mouseover', e => {
@@ -449,7 +475,7 @@
     if (sub.hidden || state.editor || state.picker || !$('pasteMenu').hidden) return;
     const a = document.activeElement;
     if (a && a !== document.body && !sub.contains(a) && a.closest('input, select, textarea, table, svg, [role="listbox"], [role="menu"], .mu-tables')) return;
-    const items = [...sub.querySelectorAll('button')];
+    const items = [...sub.querySelectorAll('button:not(:disabled)')];
     const cur = items.findIndex(b => b.getAttribute('aria-selected') === 'true');
     const next = items[Math.max(0, Math.min(items.length - 1, cur + (e.key === 'ArrowLeft' ? -1 : 1)))];
     e.preventDefault();
@@ -461,13 +487,14 @@
   });
   document.addEventListener('keydown', e => {
     if ((e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
-    const gearsOn = state.tab === 'gears', modesOn = state.tab === 'modes';
-    if (state.editor || (!gearsOn && !modesOn && $('sideCtx').hidden) || state.picker || !$('pasteMenu').hidden) return;
+    const gearsOn = state.tab === 'gears', modesOn = state.tab === 'modes', secsOn = state.tab === 'sectors';
+    if (state.editor || (!gearsOn && !modesOn && !secsOn && $('sideCtx').hidden) || state.picker || !$('pasteMenu').hidden) return;
     const a = document.activeElement;
     if (a && a !== document.body && a.closest('input, select, textarea, table, svg, [role="listbox"], [role="menu"], .mu-tables')) return;
     e.preventDefault();
     const dir = e.key === 'ArrowUp' ? -1 : 1;
     if (gearsOn) selectGear(state.cell.gear + dir);
+    else if (secsOn) selectSec(state.cell.sec + dir);
     else if (modesOn) selectMode(D.VEHICLE_MODES.indexOf(state.vmode) + dir);
     else stepMap(dir);
   });
@@ -532,7 +559,9 @@
     modes: D.VEHICLE_MODES.map(m => [m, MODE_NAMES[m]]),
     modeName: m => MODE_NAMES[m],
     colorFor: id => mapColor(id),                             // the map's own colour, as on the other tabs
-    mapFor: (m, g) => D.targets[indexOf(D.allocation[m][g - 1])],   // riding mode + gear -> slip target map (allocation)
+    // riding mode + gear -> slip target map (allocation); PRO: at the sample's sector (i), else the sector in focus
+    mapFor: (m, g, i) => D.targets[indexOf(A(m, g - 1, i != null && pro() && logView.d && logView.d.sector ? Math.round(logView.d.sector[i]) - 1 : state.cell.sec))],
+    secAt: (d, i) => (pro() && d.sector ? Math.round(d.sector[i]) : null),   // PRO: a simulated pass ends where the sector changes
     muRows: D.MU_ROWS,
     onSample: b => loadSample(b),                             // empty state: Load sample data / Browse my files
     onBrowse: () => browseLog(),
@@ -554,6 +583,7 @@
     riderLimit: () => D.riderLimit,
     onSample: b => loadSample(b),
     onBrowse: () => browseLog(),
+    subTabs: $('subTabs'),                                    // its gears as the second row of tabs
   });
   $('arrSide').appendChild(arrView.side);
   $('userSide').appendChild($('shiftPick'));              // +- Buttons: example map + factor / offset per level in the left column
@@ -630,10 +660,12 @@
     let gs;
     if (state.tab === 'gears') gs = [state.cell.gear];
     else if (noSel()) gs = all;
-    else if (state.tab === 'modes') gs = all.filter(g => D.allocation[state.vmode][g] === id);
-    else gs = all.filter(g => D.VEHICLE_MODES.some(m => D.allocation[m][g] === id));   // all slip target maps / +- buttons: any riding mode
+    else if (state.tab === 'modes' || state.tab === 'sectors') gs = all.filter(g => gearLine()[g] === id);
+    else gs = all.filter(g => D.VEHICLE_MODES.some(m => (pro() ? D.allocPro[m].slice(0, nSec()).some(r => r[g] === id) : A(m, g) === id)));   // all slip target maps / +- buttons: any riding mode (and sector)
     return (gs.length ? gs : all).map(g => g + 1);
   }
+  // PRO: the sector in focus (S1 = 1) on Riding modes / Gears / Sectors also filters the logged data; elsewhere null
+  const graphSecs = () => (pro() && ['modes', 'gears', 'sectors'].includes(state.tab) ? [state.cell.sec + 1] : null);
   function graphMuBand() {
     const r = D.MU_ROWS, i = state.muIndex;
     return [i > 0 ? (r[i - 1] + r[i]) / 2 : -Infinity, i < r.length - 1 ? (r[i] + r[i + 1]) / 2 : Infinity];
@@ -737,7 +769,7 @@
       const a = JSON.parse(item.alloc);
       Object.keys(a).forEach(m => { D.allocation[m] = a[m]; });
       if (item.td) { Object.assign(TD, JSON.parse(item.td)); trackChanged(); }
-      state.targetIndex = indexOf(D.allocation[state.cell.mode][state.cell.gear]);
+      state.targetIndex = indexOf(A(state.cell.mode, state.cell.gear));
     } else {
       to.push(Object.assign({}, item, { json: JSON.stringify(D.targets[item.map]) }));
       restore(item.json, item.map);
@@ -815,7 +847,7 @@
   // --- Left column: allocation table (vehicle mode × gear -> map) -------------
   // Spreadsheet-like (see sheet-grid.js). Selecting a cell opens the map picker for it;
   // Esc or a click outside the table / picker closes it (same as Done).
-  state.cell = { mode: state.vmode, gear: 1 };      // Dry 1, #2 by default
+  state.cell = { mode: state.vmode, gear: 1, sec: 0 };   // Dry 1, #2 (PRO: S1) by default
   state.picker = false;
   const MODES = D.VEHICLE_MODES;
   const parseMap = s => { const v = Number(String(s).trim()); return Number.isInteger(v) && v >= 1 && v <= D.targets.length ? v : null; };
@@ -824,25 +856,41 @@
     clearTimeout(flash[el]);
     if (msg) flash[el] = setTimeout(() => { $(el).textContent = ''; }, 2500);
   }
-  // STK: rows riding modes, columns gears. PRO: 15 sectors do not fit across the left column, so rows are the
-  // sectors and columns the riding modes. mi(r, c) / si(r, c): riding mode / slot of a grid cell.
-  const pro = () => D.variant === 'pro';
-  const mi = (r, c) => (pro() ? c : r), si = (r, c) => (pro() ? r : c);
-  const cellAlloc = (r, c) => D.allocation[MODES[mi(r, c)]][si(r, c)];
-  function followCell(r, c) {
-    const m = MODES[mi(r, c)], g = si(r, c);
-    state.cell = { mode: m, gear: g };
-    state.vmode = m;
-    state.targetIndex = indexOf(D.allocation[m][g]);
-  }
-  const modeHeader = i => { state.tab = 'modes'; state.picker = false; state.vmode = MODES[i]; state.cell = { mode: MODES[i], gear: state.cell.gear }; state.targetIndex = indexOf(D.allocation[MODES[i]][state.cell.gear]); sync(); };
-  const slotHeader = g => { state.tab = 'gears'; state.picker = false; state.cell = { mode: state.cell.mode, gear: g }; state.targetIndex = indexOf(D.allocation[state.cell.mode][g]); sync(); };
-  const modeOn = i => state.tab === 'modes' && !state.picker && MODES[i] === state.vmode;
-  const slotOn = g => state.tab === 'gears' && !state.picker && g === state.cell.gear;
-  const allocShape = () => {
-    const modes = MODES.map(m => MODE_NAMES[m] || m), slots = SL().list.map((g, gi) => slotTag(gi));
-    return pro() ? [slots, modes] : [modes, slots];
+  // STK: rows riding modes, columns gears. PRO: the table shows the two dimensions the tab does not pick (the tab's own
+  // one is the second row of tabs): Riding modes -> sectors × gears, Gears -> sectors × riding modes,
+  // Sectors -> riding modes × gears (the other tabs: as Riding modes). cellAt(r, c): the allocation cell of a grid cell.
+  const DIMS = {
+    mode: { n: () => MODES.length, tag: i => MODE_NAMES[MODES[i]] || MODES[i] },
+    gear: { n: () => SL().n, tag: i => slotTag(i) },
+    sec: { n: () => nSec(), tag: secTag },
   };
+  const allocDims = () => (!pro() ? ['mode', 'gear'] : state.tab === 'gears' ? ['sec', 'mode'] : state.tab === 'sectors' ? ['mode', 'gear'] : ['sec', 'gear']);
+  function cellAt(r, c) {
+    const [rd, cd] = allocDims(), v = { mode: MODES.indexOf(state.vmode), gear: state.cell.gear, sec: state.cell.sec };
+    v[rd] = r; v[cd] = c;
+    return { m: MODES[v.mode], g: v.gear, s: v.sec };
+  }
+  const cellAlloc = (r, c) => { const x = cellAt(r, c); return A(x.m, x.g, x.s); };
+  function followCell(r, c) {
+    const x = cellAt(r, c);
+    state.cell = { mode: x.m, gear: x.g, sec: x.s };
+    state.vmode = x.m;
+    state.targetIndex = indexOf(A(x.m, x.g, x.s));
+  }
+  // a header opens the tab of its dimension with it (PRO: a row header selects that row, the line on the graph)
+  function dimHeader(dim, i) {
+    state.picker = false;
+    if (dim === 'mode') { if (!(pro() && state.tab === 'sectors')) state.tab = 'modes'; state.vmode = MODES[i]; state.cell = { ...state.cell, mode: MODES[i] }; }
+    else if (dim === 'gear') { state.tab = 'gears'; state.cell = { ...state.cell, gear: i }; }
+    else { if (!pro() || !['modes', 'gears'].includes(state.tab)) state.tab = 'sectors'; state.cell = { ...state.cell, sec: i }; }
+    state.targetIndex = indexOf(A(state.cell.mode, state.cell.gear));
+    sync();
+  }
+  const dimOn = (dim, i) => !state.picker && (
+    dim === 'mode' ? (state.tab === 'modes' || (pro() && state.tab === 'sectors')) && MODES[i] === (state.tab === 'sectors' ? state.cell.mode : state.vmode)
+      : dim === 'gear' ? state.tab === 'gears' && i === state.cell.gear
+      : pro() && ['modes', 'gears', 'sectors'].includes(state.tab) && i === state.cell.sec);
+  const allocShape = () => allocDims().map(dm => Array.from({ length: DIMS[dm].n() }, (_, i) => DIMS[dm].tag(i)));
   const allocGrid = new SheetGrid($('allocTbl'), {
     label: 'Slip target allocation: map per riding mode and gear',
     startEmpty: true,                       // no cell selected at start
@@ -852,20 +900,20 @@
     parse: parseMap,
     cellClass: (r, c) => (!noSel() && cellAlloc(r, c) === D.targets[state.targetIndex].id ? 'uses-edited' : ''),
     write(cells) {
-      const first = cells[0], last = cells[cells.length - 1], nm = x => cellName(MODES[mi(x.r, x.c)], si(x.r, x.c));
+      const first = cells[0], last = cells[cells.length - 1], nm = x => { const k = cellAt(x.r, x.c); return cellName(k.m, k.g, k.s); };
       pushAllocUndo(
         cells.length === 1 ? nm(first) : `${nm(first)} … ${nm(last)}`,
         cells.length === 1 ? `Map ${cellAlloc(first.r, first.c)} → ${first.v}` : `${cells.length} cells changed`);
-      cells.forEach(({ r, c, v }) => { D.allocation[MODES[mi(r, c)]][si(r, c)] = v; });
+      cells.forEach(({ r, c, v }) => { const k = cellAt(r, c); setA(k.m, k.g, k.s, v); });
       sync();
       return cells.length;
     },
     // selecting a cell shows its map on the right: Riding modes -> that mode, Gears -> that gear, maps -> that map
     onActive(r, c) { followCell(r, c); state.noSel = false; state.picker = false; sync(); },
-    // Mode name -> Modes tab with that mode; gear / sector header -> Gears (Sectors) tab with it.
-    onRowHeader(r) { if (pro()) slotHeader(r); else modeHeader(r); },
-    onColHeader(c) { if (pro()) modeHeader(c); else slotHeader(c); },
-    headerActive: (kind, i) => ((kind === 'row') !== pro() ? modeOn(i) : slotOn(i)),
+    // Mode name -> Riding modes tab with that mode; gear header -> Gears tab; sector header -> Sectors tab (see dimHeader)
+    onRowHeader(r) { dimHeader(allocDims()[0], r); },
+    onColHeader(c) { dimHeader(allocDims()[1], c); },
+    headerActive: (kind, i) => dimOn(allocDims()[kind === 'row' ? 0 : 1], i),
     onMessage: msg => flash('allocMsg', msg),
   });
 
@@ -877,7 +925,20 @@
   });
 
   // The allocation table keeps its own selection (none at start), independent of the right side.
-  function syncSide() { allocGrid.render(); }
+  // the table's layout follows the variant, the tab (PRO) and the number of sectors
+  let allocKey = '';
+  function syncSide() {
+    const key = [D.variant, allocDims().join(), nSec()].join('|');
+    if (key !== allocKey) {
+      allocKey = key;
+      const [rows, cols] = allocShape();
+      allocGrid.none = true;                          // the cell layout changes: no allocation cell selected
+      allocGrid.setShape(rows, cols);
+      allocGrid.t.setAttribute('aria-label', `Slip target allocation: map per ${allocDims().map(dm => ({ mode: 'riding mode', gear: 'gear', sec: 'sector' })[dm]).join(' and ')}` +
+        (pro() ? (state.tab === 'gears' ? `, gear ${state.cell.gear + 1}` : state.tab === 'sectors' ? `, sector ${state.cell.sec + 1}` : `, ${MODE_NAMES[state.vmode]}`) : ''));
+    }
+    allocGrid.render();
+  }
   const editId = () => (allocGrid.none ? null : cellAlloc(allocGrid.a.r, allocGrid.a.c));
   // hovering an allocation cell thickens its map on the graph, like the selected cell
   state.hoverMap = null;
@@ -956,11 +1017,11 @@
   $('pickerClose').onclick = () => { state.picker = false; sync(); };
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.picker) { state.picker = false; sync(); } });
 
-  const cellMap = () => D.allocation[state.cell.mode][state.cell.gear];
+  const cellMap = () => A(state.cell.mode, state.cell.gear);
   function assignCell(id) {
-    if (D.allocation[state.cell.mode][state.cell.gear] === id) return;
+    if (cellMap() === id) return;
     pushAllocUndo(cellName(state.cell.mode, state.cell.gear), `Map ${cellMap()} → ${id}`);
-    D.allocation[state.cell.mode][state.cell.gear] = id;
+    setA(state.cell.mode, state.cell.gear, state.cell.sec, id);
     if (state.cell.mode === state.vmode) state.targetIndex = indexOf(id);
     sync();
   }
@@ -969,7 +1030,7 @@
     $('picker').hidden = !state.picker;
     $('mainView').hidden = state.picker;
     if (!state.picker) return;
-    const cur = cellMap(), where = `${MODE_NAMES[state.cell.mode]} · ${SL().one} ${state.cell.gear + 1}`;
+    const cur = cellMap(), where = `${MODE_NAMES[state.cell.mode]} · ${SL().one} ${state.cell.gear + 1}${pro() ? ` · Sector ${state.cell.sec + 1}` : ''}`;
     $('pickerTitle').innerHTML = `Choose map for <b>${where}</b> <span class="picker-sub">currently Map ${cur}</span>`;
     [...$('pickerList').children].forEach(b => {
       const id = +b.dataset.id, used = usage(id);
@@ -998,6 +1059,10 @@
 
   // Where is a map used? e.g. "Dry 1: G5, G6 · Dry 2: G5"
   function usage(id) {
+    if (pro()) return D.VEHICLE_MODES.map(m => {           // PRO: the sectors where any gear of the riding mode uses it
+      const secs = []; for (let s = 0; s < nSec(); s++) if (D.allocPro[m][s].includes(id)) secs.push(s);
+      return secs.length ? `${MODE_NAMES[m] || m} ${runTags(secs, secTag).join(' ')}` : null;
+    }).filter(Boolean);
     return D.VEHICLE_MODES.map(m => {
       const gears = slotTags(usedSlots(m, id));
       return gears.length ? `${MODE_NAMES[m] || m} ${gears.join(' ')}` : null;
@@ -1095,7 +1160,7 @@
 
   // Clicking a neutral part of the app (empty background, labels, empty chart area) deselects the map.
   function deselectMap() {
-    if (state.noSel || !['modes', 'gears', 'maps'].includes(state.tab)) return;
+    if (state.noSel || !['modes', 'gears', 'sectors', 'maps'].includes(state.tab)) return;
     state.noSel = true;
     sync();
   }
@@ -1122,7 +1187,7 @@
   }
   function fitChart(ch) {
     const root = document.documentElement.style;
-    const left = ['modes', 'gears', 'maps'].includes(state.tab);
+    const left = ['modes', 'gears', 'sectors', 'maps'].includes(state.tab);
     const topOf = () => ch.getBoundingClientRect().top + window.scrollY;
     let reserve = 0, top = topOf();
     if (left) {
@@ -1160,18 +1225,12 @@
     if (v === D.variant) return;
     D.variant = v;
     D.allocation = v === 'pro' ? D.allocPro : D.allocStk;
-    state.cell = { mode: state.cell.mode, gear: Math.min(state.cell.gear, SL().n - 1) };
-    if (state.memGear != null) state.memGear = Math.min(state.memGear, SL().n - 1);
+    state.cell = { ...state.cell, sec: Math.min(state.cell.sec || 0, Math.max(0, nSec() - 1)) };
     state.picker = false;
     [...$('variant').children].forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
-    $('tabGears').textContent = SL().many;
     $('tabTrack').hidden = v !== 'pro';             // Track detection tab: PRO only
-    if (v !== 'pro' && state.tab === 'track') state.tab = 'modes';
-    const [rows, cols] = allocShape();
-    allocGrid.none = true;                          // the cell layout changes: no allocation cell selected
-    allocGrid.setShape(rows, cols);
-    allocGrid.t.setAttribute('aria-label', `Slip target allocation: map per riding mode and ${SL().one.toLowerCase()}`);
-    buildGearList();
+    $('tabSectors').hidden = v !== 'pro';           // Sectors tab: PRO only (Riding modes, Gears, Sectors)
+    if (v !== 'pro' && (state.tab === 'track' || state.tab === 'sectors')) state.tab = 'modes';
     if (logView.d) { slotChannel(logView.d); logView.slotsChanged(); }
     if (!quiet) track('action', `Switch to ${v.toUpperCase()}`);
     sync();
@@ -1207,10 +1266,10 @@
     }
     return out;
   }
-  // d.gear is what the log filters and the simulation use: the gear (STK) or the sector (PRO)
+  // d.gear: the gear (log filters, simulation); d.sector: the sector the ECU would be in (PRO: its maps and filter)
   function slotChannel(d) {
     d.sector = d.laps && d.laps.length ? sectorChannel(d) : null;
-    d.gear = D.variant === 'pro' ? d.sector : d.gearRaw;
+    d.gear = d.gearRaw;
   }
   // Sectors from the logged corners (fastest lap): sector k = corner k and the straight after it, ending where the
   // rider brakes for the next corner; the last corner's sector ends at the line. Max 15 (later corners share S15).
@@ -1258,9 +1317,9 @@
   // sector ends and the PRO allocation in one go: ends = used ends (ascending, last = finish), alloc[m] = one map per sector
   function setSectors(ends, alloc) {
     TD.ends = padEnds(ends);
-    D.VEHICLE_MODES.forEach(m => { const a = alloc[m].slice(0, ends.length); while (a.length < D.SECTORS) a.push(a[a.length - 1]); D.allocPro[m] = a; });
+    D.VEHICLE_MODES.forEach(m => { const a = alloc[m].slice(0, ends.length).map(r => r.slice()); while (a.length < D.SECTORS) a.push(a[a.length - 1].slice()); D.allocPro[m] = a; });
   }
-  const allocCopy = () => Object.fromEntries(D.VEHICLE_MODES.map(m => [m, D.allocPro[m].slice()]));
+  const allocCopy = () => Object.fromEntries(D.VEHICLE_MODES.map(m => [m, D.allocPro[m].map(r => r.slice())]));   // per sector: the map of each gear
   const fmtM = v => `${Math.round(v).toLocaleString('en-US')} m`;
   // merge the sectors on both sides of split k; dropRight: the right one's map goes (else the left one's)
   function removeSplit(k, dropRight = true) {
@@ -1294,7 +1353,7 @@
     if (p - from < MIN_SECTOR || e[s0] - p < MIN_SECTOR) { flash('tdMsg', 'Too close to a split'); return; }
     pushTrackUndo(`Sector S${s0 + 1}`, `split at ${fmtM(p)}`);
     e.splice(s0, 0, p);
-    D.VEHICLE_MODES.forEach(m => al[m].splice(s0, 0, al[m][s0]));   // both halves keep the sector's maps
+    D.VEHICLE_MODES.forEach(m => al[m].splice(s0, 0, al[m][s0].slice()));   // both halves keep the sector's maps (every gear)
     setSectors(e, al);
     state.tpSel = { type: 'split', k: s0 };
     trackChanged();
@@ -1447,12 +1506,13 @@
     if (noSel()) state.muIndex = D.MU_BASE;
     state.wasNoSel = state.noSel;
     requestAnimationFrame(() => { fitMain(); fitSide(); });
-    const modes = state.tab === 'modes', gears = state.tab === 'gears';
-    const alloc = D.allocation[state.vmode];
-    // In Modes the edited map is always one the selected vehicle mode uses,
+    if (state.cell.sec >= nSec()) state.cell = { ...state.cell, sec: Math.max(0, nSec() - 1) };   // PRO: sectors removed
+    const modes = state.tab === 'modes', gears = state.tab === 'gears', secs = state.tab === 'sectors';
+    const alloc = gearLine();
+    // In Modes (PRO: and Sectors) the edited map is always one the riding mode uses along the gears,
     // in Gears one of the maps the 4 modes use in the selected gear.
-    if (modes && !alloc.includes(D.targets[state.targetIndex].id)) state.targetIndex = indexOf(alloc[0]);
-    if (gears && !gearColumn().includes(D.targets[state.targetIndex].id)) state.targetIndex = indexOf(D.allocation[state.cell.mode][state.cell.gear]);
+    if ((modes || secs) && !alloc.includes(D.targets[state.targetIndex].id)) state.targetIndex = indexOf(alloc[state.cell.gear] ?? alloc[0]);
+    if (gears && !gearColumn().includes(D.targets[state.targetIndex].id)) state.targetIndex = indexOf(A(state.cell.mode, state.cell.gear));
     const self = D.targets[state.targetIndex];
     MuLines.ensure(self);
     // a calculated sub level cannot be the edited row: fall back to μ 1.00
@@ -1460,20 +1520,20 @@
 
     const tab = state.tab;
     document.querySelectorAll('.tabs [role="tab"]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
-    const top = ['modes', 'gears', 'maps'].includes(tab);   // these tabs: navigation as the second row of tabs
+    const top = ['modes', 'gears', 'sectors', 'maps'].includes(tab);   // these tabs: navigation as the second row of tabs
     $('sideModes').hidden = !modes || top;
     $('sideGears').hidden = !gears || top;
     syncSubTabs(top, self);
     [...$('gearList').children].forEach(b => {
       const gi = +b.dataset.g;
       b.setAttribute('aria-selected', gi === state.cell.gear);
-      b.querySelector('.pk-use').textContent = D.VEHICLE_MODES.map(m => `${MODE_NAMES[m]} M${D.allocation[m][gi]}`).join(' · ');
+      b.querySelector('.pk-use').textContent = D.VEHICLE_MODES.map(m => `${MODE_NAMES[m]} M${A(m, gi)}`).join(' · ');
     });
     $('sideCtx').hidden = !(tab === 'maps' && !top);
     // Map details (left column) for the selected map: riding-mode usage, μ levels calculation, interpolation style
-    $('mapDetails').hidden = !['modes', 'gears', 'maps', 'sim'].includes(tab) || noSel();
+    $('mapDetails').hidden = !['modes', 'gears', 'sectors', 'maps', 'sim'].includes(tab) || noSel();
     // legend under the graph, in the selected line's colour
-    $('chartLegend').hidden = !['modes', 'gears', 'maps'].includes(tab) || noSel();
+    $('chartLegend').hidden = !['modes', 'gears', 'sectors', 'maps'].includes(tab) || noSel();
     $('mdName').innerHTML = `<i class="sw" style="background:${mapColor(self.id)}"></i>Map ${self.id}`;
     $('mdUse').innerHTML = usageHtml(self.id);
     $('mdUse').hidden = !usage(self.id).length;
@@ -1509,7 +1569,7 @@
     $('shiftPanel').hidden = tab !== 'user';
     $('log').hidden = tab === 'settings' || tab === 'track';           // Export MRCK stays on every tab
     // The map's data table is always shown below the graph (Modes, Gears, All slip target maps).
-    const tableOn = modes || gears || tab === 'maps';
+    const tableOn = modes || gears || secs || tab === 'maps';
     $('chart').hidden = tab === 'settings';
     $('tableView').hidden = !tableOn || noSel();
     $('copyMap').hidden = $('pasteWrap').hidden = !tableOn || noSel() || top || tab === 'sim';   // riding modes / gears / maps: Import and Export only
@@ -1521,7 +1581,7 @@
     [...$('modeList').children].forEach(b => {
       const m = D.VEHICLE_MODES[+b.dataset.i];
       b.setAttribute('aria-selected', m === state.vmode);
-      b.querySelector('.pk-use').textContent = D.allocation[m].map((id, gi) => `${slotTag(gi)} M${id}`).join(' · ');
+      b.querySelector('.pk-use').textContent = gearLine(m).map((id, gi) => `${slotTag(gi)} M${id}`).join(' · ');
     });
     const logged = logView.loaded;
     $('log').setAttribute('aria-pressed', logged);
@@ -1529,7 +1589,7 @@
     $('log').title = logged ? 'Import another log file' : '';
     $('logClear').hidden = !logged || tab === 'settings';    // log adjusters: in the left column; at the top of the log panel on tabs without one (+- Buttons)
     if (logView.side.parentNode !== $('sideLog')) $('sideLog').appendChild(logView.side);   // log adjusters: always in the left column
-    logView.setContext({ visible: tab !== 'settings', gears: graphGears(), muBand: graphMuBand(), gearsAll: tab === 'maps' || tab === 'user', smoothKind: tab === 'arr' ? 'torque' : 'slip' });
+    logView.setContext({ visible: tab !== 'settings', gears: graphGears(), secs: graphSecs(), muBand: graphMuBand(), gearsAll: tab === 'maps' || tab === 'user', smoothKind: tab === 'arr' ? 'torque' : 'slip' });
 
     syncChartTitle(self);
     syncHistory();
@@ -1571,8 +1631,9 @@
     else if (!noSel()) {
       const w = where();
       html = `Slip target map ${self.id}` + (w !== `Map ${self.id}` ? ` · ${esc(w)}` : '') + muTxt;
-    } else if (tab === 'modes') html = `${esc(MODE_NAMES[state.vmode])} slip target maps`;
-    else if (tab === 'gears') html = `${SL().one} ${slotTag(state.cell.gear)} slip target maps`;
+    } else if (tab === 'modes') html = `${esc(MODE_NAMES[state.vmode])} slip target maps${secSuffix()}`;
+    else if (tab === 'gears') html = `${SL().one} ${slotTag(state.cell.gear)} slip target maps${secSuffix()}`;
+    else if (tab === 'sectors') html = `Sector ${state.cell.sec + 1} · ${esc(MODE_NAMES[state.cell.mode])} slip target maps`;
     else html = state.mapFilter.size ? `Slip target maps ${[...state.mapFilter].sort((a, b) => a - b).join(', ')}` : 'All slip target maps';
     el.innerHTML = html;
     $('legendMu').textContent = `Map at ${fmtMu(D.MU_ROWS[state.muIndex])}`;   // the bold line = the selected μ level
@@ -1583,8 +1644,8 @@
   function sharedLabelChars() {
     const grouped = names => { const by = {}; names.forEach(([id, n]) => (by[id] = by[id] || []).push(n)); return Object.values(by).map(a => a.join(', ').length); };
     const lens = [6];
-    D.VEHICLE_MODES.forEach(m => lens.push(...grouped(D.allocation[m].map((id, gi) => [id, slotTag(gi)]))));
-    for (let gi = 0; gi < SL().n; gi++) lens.push(...grouped(D.VEHICLE_MODES.map(m => [D.allocation[m][gi], MODE_NAMES[m]])));
+    D.VEHICLE_MODES.forEach(m => lens.push(...grouped(gearLine(m).map((id, gi) => [id, slotTag(gi)]))));
+    for (let gi = 0; gi < SL().n; gi++) lens.push(...grouped(D.VEHICLE_MODES.map(m => [A(m, gi), MODE_NAMES[m]])));
     return Math.max(...lens);
   }
 
@@ -1600,9 +1661,9 @@
       // and its μ band covers only the μ range of the log's μ filter
       soloActive: logView.show && !na,
       muBand: logView.muFilter,
-      alloc: D.allocation[state.vmode].slice(),
-      compare: state.tab === 'modes' || state.tab === 'gears',
-      series: state.tab === 'gears' ? gearSeries() : state.tab === 'modes' ? D.allocation[state.vmode].map((id, gi) =>
+      alloc: gearLine().slice(),
+      compare: state.tab === 'modes' || state.tab === 'gears' || state.tab === 'sectors',
+      series: state.tab === 'gears' ? gearSeries() : state.tab === 'modes' || state.tab === 'sectors' ? gearLine().map((id, gi) =>
         ({ id, name: slotTag(gi), desc: `${SL().one} ${gi + 1}`, color: slotColors()[gi] })) : null,
       editable: !user && !na,       // the user offset preview is read-only; nothing to edit without a selection
       noActive: na,

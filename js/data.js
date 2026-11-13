@@ -95,7 +95,9 @@
   // Corner class from the slowest speed in the sector [km/h]: hairpin (STK #1), slow (#2), medium (#3), fast (#4),
   // very fast (#5). Rain then gets the lowest maps, Int slightly more open ones, Dry 1 / Dry 2 the highest.
   const sectorClass = v => (v < 75 ? 0 : v < 95 ? 1 : v < 140 ? 2 : v < 190 ? 3 : 4);
-  const proAlloc = (m, cls) => { const a = cls.map(c => allocation[m][c]); while (a.length < SECTORS) a.push(a[a.length - 1]); return a; };
+  // PRO allocation: allocPro[mode][sector] = the map of each gear (#1..#6) in that sector. A new sector layout starts with
+  // the sector's map (from its corner class) in every gear.
+  const proAlloc = (m, cls) => { const a = cls.map(c => new Array(6).fill(allocation[m][c])); while (a.length < SECTORS) a.push(a[a.length - 1].slice()); return a; };
   // Example (Paul Ricard, from the Bol d'Or sample log): 13 sectors, each a corner and the straight after it, ending
   // where the rider brakes for the next one. Classes from the sample's slowest speeds (57 km/h at S13 .. 205 km/h at S3).
   const EXAMPLE = { lapLen: 5521, ends: [679, 923, 1098, 1271, 1412, 1746, 3258, 3994, 4456, 4725, 4882, 5139, 5521],
@@ -111,7 +113,9 @@
     stk: { n: 6, pre: '#', one: 'Gear', many: 'Gears' },
     pro: { n: SECTORS, pre: 'S', one: 'Sector', many: 'Sectors' },
   };
-  window.MRCK_SLOTS = () => { const s = SLOTS[window.MRCK_DATA.variant]; return Object.assign({ list: Array.from({ length: s.n }, (_, i) => i + 1) }, s); };
+  // The gear dimension is the same in STK and PRO (PRO adds the sector on top of it), so the log filters and the
+  // simulation always work per gear; SLOTS.pro only names the sector dimension.
+  window.MRCK_SLOTS = () => { const s = SLOTS.stk; return Object.assign({ list: Array.from({ length: s.n }, (_, i) => i + 1) }, s); };
 
   // Rider Request force limit curves (Pre Control Limit, manual 3.3) and their allocation per riding mode / gear:
   // shown on the Adaptive Rider Request tab (arr-view.js). Not in the dataset: none (the tab says so).

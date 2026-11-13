@@ -533,7 +533,10 @@ body.no-scroll { overflow: hidden; }
 .subtabs button[aria-selected="true"] { color: var(--text); border-bottom-color: #3f8ce8; background: none; }
 .subtabs .sw { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .subtabs .sw { width: 2px; height: 12px; border-radius: 1px; }   /* map colour as a short vertical line */
-.subtabs .sw-all { background: #fff; }   /* All: white mark, same size as the map colours */
+.subtabs .sw-all { background: #fff; }
+.subtabs button:disabled { opacity: .35; cursor: default; }
+.subtabs .arr-tab-off { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.arr-side .arr-on { margin: -4px 0 8px; }   /* All: white mark, same size as the map colours */
 #editMapBtn[hidden] { display: none; }
 /* ---------- changes panel: versions on a timeline ---------- */
 .history-list .h-item { position: relative; padding: 9px 16px 9px 40px; cursor: pointer; transition: background .15s; }
@@ -700,6 +703,7 @@ body.no-scroll { overflow: hidden; }
 .lp-smooth { margin-top: 14px; }
 .lp-side.is-off .lp-smooth { display: none; }
 .lp-smooth-in { width: 100%; margin: 8px 0 0; accent-color: #3f8ce8; }
+.rg-track > .lp-smooth-in { margin: 0; }
 .slip-chart .ax-g { font-weight: 700; }   /* G scale row of the acceleration layer */
 /* legend entries are toggles: hidden data types faded and struck through */
 .chart-legends [data-k] { cursor: pointer; user-select: none; border-radius: 3px; transition: opacity .15s; }
@@ -922,4 +926,32 @@ body.no-scroll { overflow: hidden; }
 .arr-dual input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; pointer-events: auto; width: 16px; height: 16px; border-radius: 50%; background: #3f8ce8; border: 0; cursor: pointer; }
 .arr-dual input::-moz-range-thumb { pointer-events: auto; width: 16px; height: 16px; border-radius: 50%; background: #3f8ce8; border: 0; cursor: pointer; }
 .arr-dual input:focus-visible::-webkit-slider-thumb { outline: 2px solid #fff; outline-offset: 1px; }
+/* sliders (range-ui.js): scale dots and numbers under the track, the value field on the right, a red hint when out of range */
+.rg-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 6px; }
+.rg-track { position: relative; flex: 1; min-width: 0; }
+.rg-track > input[type="range"] { display: block; width: 100%; height: 24px; margin: 0; accent-color: #3f8ce8; cursor: pointer; }
+.rg-track > .arr-dual { margin-top: 2px; }
+.rg-dots { position: absolute; left: 0; right: 0; top: 10px; height: 4px; pointer-events: none; }
+.rg-dual .rg-dots { top: 10px; }
+.rg-dots i { position: absolute; top: 0; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: rgba(0, 0, 0, .35); }
+.rg-ticks { position: relative; height: 13px; margin-top: 1px; color: var(--muted); font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; pointer-events: none; }
+.rg-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.rg-ticks .rg-first { transform: translateX(-8px); } .rg-ticks .rg-last { transform: translateX(calc(-100% + 8px)); }
+.rg-box { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 24px; }
+.rg-val { width: 52px; height: 24px; padding: 0 6px; border: 1px solid var(--grid); border-radius: 4px; background: transparent; color: var(--text);
+  font: inherit; font-size: 12px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.rg-val:hover { border-color: var(--blue); }
+.rg-val:focus { outline: none; border-color: #3f8ce8; box-shadow: 0 0 0 1px #3f8ce8; }
+.rg-val.is-bad, .mu-ctl input[type="text"].is-bad { border-color: #ff4d5e; box-shadow: 0 0 0 1px #ff4d5e; }
+.rg-unit { font-size: 11px; font-weight: 700; color: var(--muted); }
+.rg-hint { margin: 2px 0 0; color: #ff4d5e; font-size: 11px; font-weight: 600; }
+.rg-hint[hidden] { display: none; }
+.mu-ctl.has-rg { align-items: flex-start; }
+.mu-ctl.has-rg > .mu-lbl, .mu-ctl.has-rg > .mu-unit { line-height: 24px; }
+.mu-ctl.has-rg > .rg-track { flex: 1; min-width: 80px; }
+.mu-ctl.has-rg > .rg-hint { flex-basis: 100%; }
+.lp-sub { min-height: 20px; }                       /* the reset icon (20 px) appearing does not move the slider */
+.arr-lap-row .rg-row { flex: 1; min-width: 0; margin-top: 0; }
+.arr-lap-row { align-items: flex-start; }
+.arr-sw-step { border-top: 2px dotted #f5d846; }
 .arr-adapt-note { color: var(--muted); font-size: 11px; line-height: 1.45; margin: 4px 0 0; }

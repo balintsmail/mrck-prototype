@@ -122,6 +122,7 @@
       this.side.className = 'side-block lp-side';
       this.side.setAttribute('aria-label', 'Logged data filters');
       this.side.innerHTML = SIDE;
+      RangeUI.attach(this.side.querySelector('.lp-smooth-in'), { unit: 'samples' });   // value field + scale (range-ui.js)
       this.side.hidden = true;
       this.q = s => el.querySelector(s) || this.side.querySelector(s);
       this._bind();
@@ -212,7 +213,9 @@
 
     _filter() {
       const f = this.f, d = this.d;
-      const key = [f.t0, f.t1, [...f.gears].sort(), f.muLo, f.muHi, [...f.corners].sort(), f.smooth].join('|');
+      // PRO: the sector in focus on the graph (ctx.secs, app.js) filters too, while the gears follow the graph
+      const secs = f.autoGears && this.ctx.secs && d.sector ? new Set(this.ctx.secs) : null;
+      const key = [f.t0, f.t1, [...f.gears].sort(), f.muLo, f.muHi, [...f.corners].sort(), f.smooth, secs ? [...secs].join() : ''].join('|');
       if (this.cache === key) return;
       this.cache = key;
       const { rate, n, lean, mu, gear, tgt, red, accx } = d;
@@ -233,7 +236,7 @@
       const xSlip = d.slipF2 || slip, av = { x: [], y: [], mu: [], i: [] }, avBins = Array.from({ length: ACC_BINS }, () => []);
       let tr = null, tg = null, rd = null, shown = 0;
       for (let i = i0; i <= i1; i++) {
-        const ok = (!inCorner || inCorner[i]) && (!gear || !f.gears.size || f.gears.has(gear[i])) && mu[i] >= lo && mu[i] <= hi;
+        const ok = (!inCorner || inCorner[i]) && (!gear || !f.gears.size || f.gears.has(gear[i])) && (!secs || secs.has(d.sector[i])) && mu[i] >= lo && mu[i] <= hi;
         const x = Math.abs(lean[i]);
         if (ok && slip[i] >= 0) { if (!tr) traces.push(tr = []); tr.push([x, slip[i]]); shown++; } else tr = null;
         if (ok && tgt && tgt[i] <= TGT_MAX) { if (!tg) target.push(tg = []); tg.push([x, tgt[i]]); } else tg = null;
@@ -293,7 +296,7 @@
       this.q('.lp-mu-read').textContent = ends ? 'all' : `${f.muLo <= MU_MIN + 1e-9 ? '≤ ' : ''}${f.muLo.toFixed(2)} … ${f.muHi >= MU_MAX - 1e-9 ? '≥ ' : ''}${f.muHi.toFixed(2)}`;
       const sm = this.q('.lp-smooth-in'), sk = this._smoothKey(), sv = f[sk], name = sk === 'mdSmooth' ? 'Torque smoothing' : 'Slip smoothing';
       if (document.activeElement !== sm || +sm.value !== sv) sm.value = sv;     // the slider always shows the value in use
-      this.q('.lp-smooth-read').textContent = sv <= 1 ? 'off' : `${sv} samples · ${Math.round(sv / d.rate * 1000)} ms`;
+      this.q('.lp-smooth-read').textContent = sv <= 1 ? 'off' : `${Math.round(sv / d.rate * 1000)} ms`;   // the samples: the value field
       this.q('.lp-smooth-h').textContent = name;
       sm.setAttribute('aria-label', sk === 'mdSmooth' ? 'Torque smoothing (md_req, md_act): samples averaged' : 'Slip smoothing: samples averaged');
       const rsm = this.q('.reset-btn[data-reset="smooth"]'); rsm.title = 'Reset ' + name.toLowerCase(); rsm.setAttribute('aria-label', rsm.title);
