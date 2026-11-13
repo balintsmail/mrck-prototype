@@ -766,7 +766,9 @@ body.no-scroll { overflow: hidden; }
 .layout.sim-mode #sideLog { order: 3; }
 .layout.sim-mode #mapDetails { order: 2; }
 .layout.sim-mode .side-alloc-h, .layout.sim-mode #allocTbl, .layout.sim-mode #allocMsg { display: none; }
-.layout.sim-mode .lp-side > :not(.lp-side-body) { display: none; }   /* Simulation: no show switch / smoothing; the filters below decide */
+.layout.sim-mode .lp-side > :not(.lp-side-body):not(.lp-smooth) { display: none; }   /* Simulation: no show switch; slip smoothing and the filters below decide */
+.layout.sim-mode .lp-side.is-off > .lp-smooth { display: block; }
+.layout.sim-mode .lp-side > .lp-smooth { margin: 0 0 16px; }
 .sim-side { border-top: 0; margin-top: 0 !important; padding-top: 0 !important; }
 .sim-side .side-h { margin: 0 0 8px; }
 .sim-pick { margin-bottom: 16px; }

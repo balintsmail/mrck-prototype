@@ -13,6 +13,7 @@
   // gears (STK) or sectors (PRO): see data.js
   const slots = () => (window.MRCK_SLOTS ? window.MRCK_SLOTS() : { n: 6, list: [1, 2, 3, 4, 5, 6], pre: '#', one: 'Gear', many: 'Gears' });
   const X_MAX = 70, SLIP_MAX = 25.5;
+  const TPD_MIN = 0;                             // throttle grip [%]: samples at or below it (closed throttle) are left out
   const FONT = "700 10px 'Noto Sans', system-ui, sans-serif";
   const fmtMu = m => m.toFixed(2);
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -204,10 +205,14 @@
       return this.gear;
     }
 
+    // The logged slip with the slip smoothing of the logged data (left column) applied.
+    _slip(d) { return (this.o.slip && this.o.slip()) || d.slip; }
+
     // Samples of the selected gears in the selected corner(s) and time section, as runs of consecutive samples.
     _select(d) {
       const f = this.o.filters();
       const gearOk = i => !d.gear || this.sel.has(Math.round(d.gear[i]));
+      const slip = this._slip(d);
       const [M0, M1] = LogPanel.MU_RANGE, muLo = f.muLo <= M0 + 1e-9 ? -Infinity : f.muLo, muHi = f.muHi >= M1 - 1e-9 ? Infinity : f.muHi;
       const ranges = (f.corners.size ? d.corners.filter(c => f.corners.has(c.n)) : d.corners).flatMap(c => c.ranges);
       const runs = [];
@@ -215,7 +220,8 @@
         a = Math.max(a, f.t0); b = Math.min(b, f.t1);
         let run = null;
         for (let i = Math.max(0, Math.floor(a * d.rate)); i < Math.min(d.n, Math.ceil(b * d.rate)); i++) {
-          const ok = gearOk(i) && Number.isFinite(d.slip[i]) && d.slip[i] >= 0 && d.mu[i] >= muLo && d.mu[i] <= muHi;
+          // only on the throttle (tpd > 0 %): traction control works in the acceleration phase; a log without tpd is not filtered
+          const ok = gearOk(i) && Number.isFinite(slip[i]) && slip[i] >= 0 && d.mu[i] >= muLo && d.mu[i] <= muHi && (!d.tpd || d.tpd[i] > TPD_MIN);
           // a new run where the gear changes, so each run is simulated with one map
           if (ok && run && d.gear && Math.round(d.gear[i]) !== Math.round(d.gear[run[run.length - 1]])) run = null;
           if (ok) { if (!run) runs.push(run = []); run.push(i); } else run = null;
@@ -305,7 +311,7 @@
       this.q('.sim-info').textContent = `${this.o.modeName(this.mode)} ${selG.map(gg => slots().pre + gg).join(' ')} · map ${[t.id, ...others.map(o => o.id)].join(', ')} · ${all.length.toLocaleString()} samples` +
         (passes != null ? ` · ${passes} pass${passes === 1 ? '' : 'es'}` : '');
       this.q('.sim-h-top').textContent = `· ${this.o.modeName(this.mode)} ${slots().pre}${this.gear} · map ${t.id} · μ ${fmtMu(muRows[mi])} selected` + (editable ? ' (drag its points)' : ' (calculated level)');
-      const x = i => Math.abs(d.lean[i]);
+      const x = i => Math.abs(d.lean[i]), slip = this._slip(d);
 
       // ---- top: logged slip coloured by μ, the map as on the first three tabs (selected map), the target at the logged μ ----
       const mc = this.o.colorFor(t.id);                            // the map's own colour
@@ -318,9 +324,9 @@
         c.lineWidth = 1; c.lineJoin = 'round';
         runs.forEach(run => { for (let k = 1; k < run.length; k++) {
           const a = run[k - 1], b = run[k];
-          c.strokeStyle = col(d.mu[b]); c.beginPath(); c.moveTo(g.px(x(a)), g.py(d.slip[a])); c.lineTo(g.px(x(b)), g.py(d.slip[b])); c.stroke();
+          c.strokeStyle = col(d.mu[b]); c.beginPath(); c.moveTo(g.px(x(a)), g.py(slip[a])); c.lineTo(g.px(x(b)), g.py(slip[b])); c.stroke();
         } });
-        all.forEach(i => { c.fillStyle = col(d.mu[i]); c.fillRect(g.px(x(i)) - 2, g.py(d.slip[i]) - 2, 4, 4); });
+        all.forEach(i => { c.fillStyle = col(d.mu[i]); c.fillRect(g.px(x(i)) - 2, g.py(slip[i]) - 2, 4, 4); });
       }
       c.globalAlpha = 1;
       const rowPath = r => { c.beginPath(); t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[r][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); }); };

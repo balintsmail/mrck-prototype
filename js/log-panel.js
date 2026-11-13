@@ -46,6 +46,7 @@
   const fmtLap = s => { const m = Math.floor(s / 60); return m + ':' + (s - m * 60).toFixed(3).padStart(6, '0'); };
   const fmtClock = s => { const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s - m * 60)).padStart(2, '0'); };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const SMOOTH_DEF = 10;                         // slip smoothing [samples] by default, on every tab (the Simulation uses it too)
   const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const sw = (key, label, title) =>
     `<button class="switch" data-sw="${key}" role="switch" aria-checked="false" title="${title}"><span class="material-icons" aria-hidden="true">toggle_off</span>${label}</button>`;
@@ -57,7 +58,7 @@
     <div class="lp-info"></div>
     <div class="lp-smooth">
       <div class="lp-sub"><span class="side-sub">Slip smoothing</span><span class="lp-read lp-smooth-read"></span><button class="reset-btn" data-reset="smooth" title="Reset slip smoothing" aria-label="Reset slip smoothing" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
-      <input type="range" class="lp-smooth-in" min="1" max="50" step="1" value="1" aria-label="Slip smoothing: samples averaged">
+      <input type="range" class="lp-smooth-in" min="1" max="50" step="1" value="${SMOOTH_DEF}" aria-label="Slip smoothing: samples averaged">
     </div>
     <div class="lp-side-body">
       <div class="side-h lp-filters-h">Logged data filters</div>
@@ -112,7 +113,7 @@
       this.el = el;
       this.o = Object.assign({ onChange() {}, geom: () => null, muRows: [] }, opts);
       this.d = null;
-      this.f = { show: true, autoGears: true, gears: new Set(GEARS), autoMu: false, muLo: MU_MIN, muHi: MU_MAX, t0: 0, t1: 0, corners: new Set(), smooth: 1 };
+      this.f = { show: true, autoGears: true, gears: new Set(GEARS), autoMu: false, muLo: MU_MIN, muHi: MU_MAX, t0: 0, t1: 0, corners: new Set(), smooth: SMOOTH_DEF };
       this.ctx = { visible: true, gears: GEARS, muBand: [-Infinity, Infinity] };
       el.innerHTML = TEMPLATE;
       this.side = document.createElement('section');
@@ -194,13 +195,17 @@
       const d = this.d, k = this.f.smooth;
       if (k <= 1) return d.slip;
       if (this.smoothed && this.smoothed.k === k && this.smoothed.d === d) return this.smoothed.v;
-      const n = d.n, src = d.slip, out = new Float32Array(n), cum = new Float64Array(n + 1);
-      for (let i = 0; i < n; i++) cum[i + 1] = cum[i] + src[i];
+      // samples without a slip value (NaN) are skipped and stay NaN
+      const n = d.n, src = d.slip, out = new Float32Array(n), cum = new Float64Array(n + 1), cnt = new Int32Array(n + 1);
+      for (let i = 0; i < n; i++) { const ok = Number.isFinite(src[i]); cum[i + 1] = cum[i] + (ok ? src[i] : 0); cnt[i + 1] = cnt[i] + (ok ? 1 : 0); }
       const back = Math.floor((k - 1) / 2), fwd = k - 1 - back;
-      for (let i = 0; i < n; i++) { const a = Math.max(0, i - back), b = Math.min(n - 1, i + fwd); out[i] = (cum[b + 1] - cum[a]) / (b - a + 1); }
+      for (let i = 0; i < n; i++) { const a = Math.max(0, i - back), b = Math.min(n - 1, i + fwd), c = cnt[b + 1] - cnt[a]; out[i] = Number.isFinite(src[i]) && c ? (cum[b + 1] - cum[a]) / c : NaN; }
       this.smoothed = { k, d, v: out };
       return out;
     }
+
+    // the slip channel as the graphs show it (smoothed), for the Simulation
+    slip() { return this.d ? this._smoothSlip() : null; }
 
     _filter() {
       const f = this.f, d = this.d;
@@ -297,7 +302,7 @@
       // the track map and the corner segments are made from the best (fastest) full lap
       this.q('.lp-map-src').textContent = d.refLap ? `Best lap · ${d.refLap.name} · ${fmtLap(d.refLap.b - d.refLap.a)}` : '';
       // reset icons: shown when a filter is not in its default state
-      const dflt = { smooth: f.smooth === 1, gears: this.ctx.gearsAll ? !f.autoGears && !f.gears.size : f.autoGears, mu: !f.autoMu && f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9,
+      const dflt = { smooth: f.smooth === SMOOTH_DEF, gears: this.ctx.gearsAll ? !f.autoGears && !f.gears.size : f.autoGears, mu: !f.autoMu && f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9,
         time: f.t0 <= 1e-6 && f.t1 >= d.duration - 1e-6, corners: !f.corners.size };
       this.side.querySelectorAll('.reset-btn[data-reset]').forEach(b => { b.hidden = dflt[b.dataset.reset]; });
       this.q('.lp-corners').innerHTML = d.corners.length && !this.track ? `<button class="chip lp-chip" data-c="all" aria-pressed="${!f.corners.size}" style="--mc:${C.accent}">All</button>` +
@@ -343,9 +348,9 @@
         if (l) { this._setRange(+l.dataset.a, +l.dataset.b); return; }
         const rs = e.target.closest('.reset-btn[data-reset]');
         if (rs) {
-          this._set({ smooth: { smooth: 1 }, gears: this._gearDefault(), mu: { autoMu: false, muLo: MU_MIN, muHi: MU_MAX },
+          this._set({ smooth: { smooth: SMOOTH_DEF }, gears: this._gearDefault(), mu: { autoMu: false, muLo: MU_MIN, muHi: MU_MAX },
             time: { t0: 0, t1: this.d.duration }, corners: { corners: new Set() } }[rs.dataset.reset]);
-          if (rs.dataset.reset === 'smooth') this.q('.lp-smooth-in').value = 1;
+          if (rs.dataset.reset === 'smooth') this.q('.lp-smooth-in').value = SMOOTH_DEF;
           return;
         }
         const cm = e.target.closest('.lp-map [data-c]');                  // a corner on the track map

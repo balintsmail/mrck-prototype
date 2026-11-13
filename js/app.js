@@ -527,6 +527,7 @@
   // Simulation tab: the slip target at the logged μ, per gear (its Dry 2 map) and corner of the imported log.
   const simView = new SimView($('simPanel'), {
     getLog: () => logView.d,
+    slip: () => logView.slip(),                               // the logged slip, smoothed (Slip smoothing)
     filters: () => logView.f,                                 // timeline section + corners picked on the circuit map
     modes: D.VEHICLE_MODES.map(m => [m, MODE_NAMES[m]]),
     modeName: m => MODE_NAMES[m],
