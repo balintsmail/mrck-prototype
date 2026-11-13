@@ -22,14 +22,14 @@
   const GEARS = [1, 2, 3, 4, 5, 6];
   // colours from the All slip target maps scale (app.js MAP_COLORS); the map white
   const START_CURVE = 12;                                   // the Limit Setup curve the adaptation modifies by default
-  const COL = { lim: '#ffffff', pre: '#00b0b7', req: '#0042e8', act: '#a40663', fx: '#6506a4', red: '#e2cf00', lean: '#9aa0b4' };
+  const COL = { lim: '#ffffff', pre: '#00b0b7', req: '#0042e8', act: '#a40663', fx: '#6506a4', red: '#e2cf00', lean: '#9aa0b4', tgt: '#3f8ce8' };
   const RED_MIN = 2;                                       // TC reduction [Nm] counted as "reducing" (md_req − md_tgt_dtc)
   const RED_SAMPLES = 5;                                   // a map point adapts on at least 5 reducing samples (50 ms) in its lean window
   const LAPS = 20, LAP_MS = 250;                           // simulated laps; animation: 0.25 s per lap
   const LEAN_DEF = [30, 70];                               // lean angles to work: |lean| from .. to [°]
   // adaptation parameters: [key, label, min, max, step, default, note next to the label, unit of the value field]
   const PARAMS = [
-    ['margin', 'Target for adaptive', -10, 20, 1, 10, v => (v > 0 ? 'above the reduction' : v < 0 ? 'below the reduction' : 'at the reduction'), '%'],
+    ['margin', 'Target for adaptive', -10, 20, 1, 5, v => (v > 0 ? 'above the reduction' : v < 0 ? 'below the reduction' : 'at the reduction'), '%'],
     ['rate', 'Adaptation per lap', 0, 100, 1, 50, () => 'of the difference', '%'],
     ['step', 'Max. change per lap', 0, 1000, 10, 200, () => '', 'N'],
   ];
@@ -66,11 +66,11 @@
     <div class="arr-adapt">
       <div class="side-h arr-adapt-h">Limit adaptation</div>
       <div class="arr-ctl">
-        <div class="lp-sub"><span class="side-sub">Lean angles to work</span><span class="lp-read" data-r="lean"></span><button class="reset-btn" data-reset="lean" title="Reset lean angles to work: ${LEAN_DEF[0]}–${LEAN_DEF[1]}°" aria-label="Reset lean angles to work" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
+        <div class="lp-sub"><span class="side-sub">Lean angle range to be active</span><span class="lp-read" data-r="lean"></span><button class="reset-btn" data-reset="lean" title="Reset lean angle range: ${LEAN_DEF[0]}–${LEAN_DEF[1]}°" aria-label="Reset lean angle range" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
         <div class="arr-dual">
           <div class="arr-dual-track"><i class="arr-dual-fill"></i></div>
-          <input type="range" data-l="lo" min="0" max="70" step="1" value="${LEAN_DEF[0]}" aria-label="Lean angles to work: from">
-          <input type="range" data-l="hi" min="0" max="70" step="1" value="${LEAN_DEF[1]}" aria-label="Lean angles to work: to">
+          <input type="range" data-l="lo" min="0" max="70" step="1" value="${LEAN_DEF[0]}" aria-label="Lean angle range: from">
+          <input type="range" data-l="hi" min="0" max="70" step="1" value="${LEAN_DEF[1]}" aria-label="Lean angle range: to">
         </div>
       </div>
       ${PARAMS.map(([k, label, min, max, step, def]) => `
@@ -116,7 +116,7 @@
       this.side.innerHTML = SIDE;
       // sliders: value fields + scale (range-ui.js)
       PARAMS.forEach(P => RangeUI.attach(this.side.querySelector(`input[data-p="${P[0]}"]`), { unit: P[7] }));
-      RangeUI.attachDual(this.side.querySelector('input[data-l="lo"]'), this.side.querySelector('input[data-l="hi"]'), { unit: '°' });
+      RangeUI.attachDual(this.side.querySelector('input[data-l="lo"]'), this.side.querySelector('input[data-l="hi"]'), { unit: '°', tickUnit: '°' });
       RangeUI.attach(this.side.querySelector('.arr-lap'), {});
       el.querySelector('.sim-body').appendChild(this.side.querySelector('.arr-lapctl'));   // the simulated lap: below the graph
       this.q = s => el.querySelector(s) || this.side.querySelector(s);
@@ -344,8 +344,9 @@
     // the reduction force = median actual force (md_act × i / r, torque smoothing applied) while the TC reduces
     // (md_req − md_tgt_dtc > 2 Nm), with at least 5 such samples. Then, for each point inside the lean angles to work:
     // target = reduction force × (1 + target %)  (no reduction: the dataset value);
-    // new = old + clamp(rate × (target − old), ±max. change).  Points above the highest one with data (high lean, no
-    // reduction there) take that point's new value. Points outside the lean angles to work keep the dataset value.
+    // points above the highest one with a reduction take that point's target; then every target is raised to at least
+    // the highest smoothed actual force logged in its window × (1 + target %), so the limit never cuts what was used;
+    // new = old + clamp(rate × (target − old), ±max. change). Points outside the lean angles to work keep the dataset value.
     _adapt(d, RL, cv) {
       const S = this._smoothed(d), p = this.p, f = this.o.filters();
       const off = this.off.has(cv.g);
@@ -353,29 +354,31 @@
       if (this.adFor === d && this.adKey === key) return this.ad;
       const L = RL.lean, n = L.length, win = L.map((l, j) => [j ? (L[j - 1] + l) / 2 : 0, j < n - 1 ? (l + L[j + 1]) / 2 : 90]);
       const gc = this.gearCh(d), red = i => (d.red ? d.red[i] : d.mdReq[i] - d.mdAct[i]);
-      const v = L.map(() => []);
+      const v = L.map(() => []), all = L.map(() => []);
       for (let i = Math.max(0, Math.floor(f.t0 * d.rate)); i < Math.min(d.n, Math.ceil(f.t1 * d.rate)); i++) {
-        if ((gc && Math.round(gc[i]) !== cv.g) || (d.tpd && d.tpd[i] <= TPD_MIN) || !(red(i) > RED_MIN) || !Number.isFinite(S.act[i])) continue;
+        if ((gc && Math.round(gc[i]) !== cv.g) || (d.tpd && d.tpd[i] <= TPD_MIN) || !Number.isFinite(S.act[i])) continue;
         const x = Math.abs(d.lean[i]), j = win.findIndex(([a, b]) => x >= a && x < b);
-        if (j >= 0) v[j].push(S.act[i]);
+        if (j < 0) continue;
+        all[j].push(S.act[i]);
+        if (red(i) > RED_MIN) v[j].push(S.act[i]);
       }
       const fr = v.map(a => (a.length >= RED_SAMPLES ? median(a) : null));
+      const peak = all.map(a => (a.length >= RED_SAMPLES ? Math.max(...a) : null));   // the highest smoothed actual force
       const on = j => !off && L[j] >= p.lo && L[j] <= p.hi;   // adaptation off: every point keeps the dataset value
       let last = -1; fr.forEach((v, j) => { if (v != null && on(j)) last = j; });
       const base = cv.row, maps = [base.slice()];
+      // the target the adaptation moves towards (inside the active lean range; above the last point with data: that point's)
+      const tgt = base.map((b, j) => (on(j) && fr[j] != null ? Math.round(fr[j] * (1 + p.margin / 100)) : b));
+      if (last >= 0) for (let j = last + 1; j < n; j++) if (on(j)) tgt[j] = tgt[last];
+      // never below the highest smoothed actual force logged there + target %: the limit must not cut what was used
+      L.forEach((l, j) => { if (on(j) && peak[j] != null) tgt[j] = Math.max(tgt[j], Math.round(peak[j] * (1 + p.margin / 100))); });
       let cur = base.slice();
       for (let k = 1; k <= LAPS; k++) {
-        cur = cur.map((val, j) => {
-          if (!on(j)) return base[j];
-          const t = fr[j] != null ? fr[j] * (1 + p.margin / 100) : base[j];
-          return Math.round(val + clamp(p.rate / 100 * (t - val), -p.step, p.step));
-        });
-        // high lean without data: the points above the highest one with data follow that point's value
-        if (last >= 0) for (let j = last + 1; j < n; j++) if (on(j)) cur[j] = cur[last];
+        cur = cur.map((val, j) => (on(j) ? Math.round(val + clamp(p.rate / 100 * (tgt[j] - val), -p.step, p.step)) : base[j]));
         maps.push(cur);
       }
       const lap = d.laps.find(l => Math.abs(l.a - f.t0) < 0.05 && Math.abs(l.b - f.t1) < 0.05);
-      this.ad = { maps, fr, on, off, src: lap ? lap.name : 'the selected time section' }; this.adFor = d; this.adKey = key;
+      this.ad = { maps, tgt, fr, on, off, src: lap ? lap.name : 'the selected time section' }; this.adFor = d; this.adKey = key;
       return this.ad;
     }
 
@@ -514,6 +517,14 @@
         }
         c.setLineDash([]); c.globalAlpha = 1;
       }
+      if (ad && !ad.off && !H('tgt')) {                          // the target, solid blue, inside the active lean range
+        c.strokeStyle = COL.tgt; c.lineWidth = 2; c.lineJoin = 'round';
+        [-1, 1].forEach(sg => {
+          c.beginPath();
+          for (let lx = p.lo; lx <= p.hi + 1e-9; lx += 0.5) { const X = gr.px(sg * lx), Yv = gr.py(limitAt(RL.lean, ad.tgt, lx)); lx === p.lo ? c.moveTo(X, Yv) : c.lineTo(X, Yv); }
+          c.stroke();
+        });
+      }
       if (adRow && !H('lim')) {                                  // the adapted map after this.lap laps: bold, its points
         curvePath(c, gr, adRow); c.strokeStyle = COL.lim; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke();
         RL.lean.forEach((lx, j) => [-1, 1].forEach(sg => {
@@ -527,12 +538,14 @@
         RL.lean.forEach((lx, j) => { if (ad.on(j)) [-1, 1].forEach(sg => { const Yv = gr.py(adRow[j]); c.fillText(fmtN(adRow[j]), gr.px(sg * lx), Yv - 14 < gr.y0 + 20 ? Yv + 14 : Yv - 14); }); });
       }
       handles(c, gr);
+      if (ad && !ad.off && !H('tgt')) this.top.rightLabel('Target', gr.py(limitAt(RL.lean, ad.tgt, p.hi)), COL.tgt, false, 17);
       if (!H('lim')) curves.forEach((cv, k) => { const row = k === 0 ? adRow : cv.row; if (row) this.top.rightLabel(k === 0 ? `#${cv.g}${ad && ad.off ? ' · off' : ` · lap ${this.lap}`}` : `#${cv.g}`, gr.py(limitAt(RL.lean, row, 70)) + k * 19, COL.lim, k === 0, 17); });
 
       setHTML(this.q('.arr-legend-f'),
         item('lim', `<i class="sim-sw arr-sw-lim"></i>Map of gear ${this.gear} ${ad && ad.off ? '(adaptation off)' : (this.lap ? `after lap ${this.lap} (adapted)` : "· lap 0, the original map")}`, !cv0.row) +
         item('steps', `<i class="sim-sw arr-sw-step"></i>After each earlier lap`, !ad || ad.off || this.lap < 2) +
-        item('base', `<i class="sim-sw arr-sw-base"></i>Curve ${cv0.no ?? '–'} in the dataset`, !cv0.row) +
+        item('tgt', `<i class="sim-sw arr-sw-ln" style="--c:${COL.tgt}"></i>Target`, !ad || ad.off) +
+        item('base', `<i class="sim-sw arr-sw-base"></i>Original map`, !cv0.row) +
         item('red', `<i class="sim-sw arr-sw-ptln" style="--c:${COL.red}"></i>DTC reduction · (md_req − md_tgt_dtc) × i / r`, !F.red) +
         item('pre', `<i class="sim-sw arr-sw-pts" style="--c:${COL.pre}"></i>Logged limit · md_tgt_prectrl × i / r, where it limits`, !F.pre) +
         item('req', `<i class="sim-sw arr-sw-ln" style="--c:${COL.req}"></i>Request · md_req × i / r`, !F.req) +

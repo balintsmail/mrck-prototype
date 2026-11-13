@@ -46,7 +46,7 @@
   const fmtLap = s => { const m = Math.floor(s / 60); return m + ':' + (s - m * 60).toFixed(3).padStart(6, '0'); };
   const fmtClock = s => { const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s - m * 60)).padStart(2, '0'); };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const SMOOTH_DEF = 10;                         // slip smoothing [samples] by default, on every tab (the Simulation uses it too)
+  const SMOOTH_DEF = 20;                        // slip smoothing [samples] by default, on every tab (the Simulation uses it too)
   const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const sw = (key, label, title) =>
     `<button class="switch" data-sw="${key}" role="switch" aria-checked="false" title="${title}"><span class="material-icons" aria-hidden="true">toggle_off</span>${label}</button>`;
@@ -305,8 +305,8 @@
       // laps
       const same = (a0, b0) => Math.abs(a0 - f.t0) < 1e-3 && Math.abs(b0 - f.t1) < 1e-3;
       const fastest = full.length ? full.reduce((p, l) => (l.b - l.a < p.b - p.a ? l : p)) : null;
-      this.q('.lp-laps').innerHTML = [{ name: 'All', a: 0, b: d.duration }, ...d.laps].map((l, k) =>
-        `<button class="chip lp-chip" data-a="${l.a}" data-b="${l.b}" aria-pressed="${same(l.a, l.b)}"${l.ignored ? ` disabled title="${l.full ? 'More than 5 % slower than the best lap' : 'Out and in laps'}: not used"` : ''} style="--mc:${C.accent}">${esc(l.name)}${l.full ? ` <small>${fmtLap(l.b - l.a)}${l === fastest ? ' ★' : ''}</small>` : ''}</button>`).join('');
+      this.q('.lp-laps').innerHTML = [{ name: 'All', a: 0, b: d.duration }, ...d.laps.filter(l => !l.ignored)].map((l, k) =>   // out / in and slow laps: hidden (app.js markLaps)
+        `<button class="chip lp-chip" data-a="${l.a}" data-b="${l.b}" aria-pressed="${same(l.a, l.b)}" style="--mc:${C.accent}">${esc(l.name)}${l.full ? ` <small>${fmtLap(l.b - l.a)}${l === fastest ? ' ★' : ''}</small>` : ''}</button>`).join('');
       // corners
       this.q('.lp-corner-row').hidden = !d.corners.length;
       this.q('.lp-map-box').hidden = !this.track;

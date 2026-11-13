@@ -3,7 +3,7 @@
 // the slider (also when code sets range.value) and takes typed numbers; a number outside the accepted range is not
 // applied: the field turns red and a hint below names the range (Esc / leaving the field restores the value).
 //   RangeUI.attach(range, { unit, tick, min: () => n, max: () => n, txt })   txt: an existing text field to use
-//   RangeUI.attachDual(lo, hi, { unit, tick })                               two thumbs (from / to) on one track
+//   RangeUI.attachDual(lo, hi, { unit, tick, tickUnit })                     two thumbs (from / to) on one track; tickUnit after each scale number
 (function () {
   const NATIVE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
   const num = s => { const v = parseFloat(String(s).trim().replace(',', '.').replace('−', '-')); return /^[-−]?\d*[.,]?\d+$|^[-−]?\d+[.,]?$/.test(String(s).trim()) ? v : NaN; };
@@ -22,12 +22,12 @@
   }
   // thumb centres travel from 8 px to (width − 8 px) on every slider here (16 px thumbs)
   const at = (v, min, max) => `calc(8px + (100% - 16px) * ${(v - min) / (max - min || 1)})`;
-  function scale(min, max, tick) {
+  function scale(min, max, tick, tu = '') {
     const ts = ticksOf(min, max, tick);
     const dots = document.createElement('div'); dots.className = 'rg-dots'; dots.setAttribute('aria-hidden', 'true');
     dots.innerHTML = ts.slice(1, -1).map(v => `<i style="left:${at(v, min, max)}"></i>`).join('');
     const ticks = document.createElement('div'); ticks.className = 'rg-ticks'; ticks.setAttribute('aria-hidden', 'true');
-    ticks.innerHTML = ts.map((v, k) => `<span style="left:${at(v, min, max)}"${k === 0 ? ' class="rg-first"' : k === ts.length - 1 ? ' class="rg-last"' : ''}>${lbl(v)}</span>`).join('');
+    ticks.innerHTML = ts.map((v, k) => `<span style="left:${at(v, min, max)}"${k === 0 ? ' class="rg-first"' : k === ts.length - 1 ? ' class="rg-last"' : ''}>${lbl(v)}${tu}</span>`).join('');
     return [dots, ticks];
   }
   function field(label) {
@@ -91,7 +91,7 @@
     const min = +a.min, max = +a.max, step = a.step || 1, wrap = a.parentNode;
     const track = document.createElement('div'); track.className = 'rg-track rg-dual';
     wrap.before(track); track.appendChild(wrap);
-    track.append(...scale(min, max, o.tick));
+    track.append(...scale(min, max, o.tick, o.tickUnit));
     const row = document.createElement('div'); row.className = 'rg-row';
     track.before(row); row.appendChild(track);
     const box = document.createElement('span'); box.className = 'rg-box';
