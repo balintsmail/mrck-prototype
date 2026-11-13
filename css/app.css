@@ -922,5 +922,4 @@ body.no-scroll { overflow: hidden; }
 .arr-dual input::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; pointer-events: auto; width: 16px; height: 16px; border-radius: 50%; background: #3f8ce8; border: 0; cursor: pointer; }
 .arr-dual input::-moz-range-thumb { pointer-events: auto; width: 16px; height: 16px; border-radius: 50%; background: #3f8ce8; border: 0; cursor: pointer; }
 .arr-dual input:focus-visible::-webkit-slider-thumb { outline: 2px solid #fff; outline-offset: 1px; }
-.arr-sw-step { border-top: 2px dotted #f5d846; }
 .arr-adapt-note { color: var(--muted); font-size: 11px; line-height: 1.45; margin: 4px 0 0; }
