@@ -87,11 +87,11 @@
         <div class="lp-sub lp-tl-h"><span class="side-sub">Timeline</span><button class="reset-btn" data-reset="time" title="Reset timeline" aria-label="Reset timeline" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
         <div class="lp-tl-box"><canvas class="lp-tl" aria-label="Timeline: click a lap, drag to select a section, drag the ends to trim"></canvas></div>
         <div class="lp-corner-row">
-          <div class="lp-sub"><span class="side-sub">Corners</span><button class="reset-btn" data-reset="corners" title="Reset corners: all corners" aria-label="Reset corners: all corners" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
+          <div class="lp-sub"><span class="side-sub">Sectors</span><button class="reset-btn" data-reset="corners" title="Reset sectors: all sectors" aria-label="Reset sectors: all sectors" hidden><span class="material-icons" aria-hidden="true">restart_alt</span></button></div>
           <div class="lp-read lp-map-src"></div>
           <!-- track map from GPS (reference lap): corner segments (braking point to the next one), click to filter; buttons when there is no GPS -->
-          <div class="lp-map-box"><svg class="lp-map" role="group" aria-label="Track map: click corners to filter by them"></svg></div>
-          <div class="chip-list lp-corners" role="group" aria-label="Corners"></div>
+          <div class="lp-map-box"><svg class="lp-map" role="group" aria-label="Track map: click sectors to filter by them"></svg></div>
+          <div class="chip-list lp-corners" role="group" aria-label="Sectors"></div>
         </div>
       </section>
     </div>`;
@@ -175,6 +175,8 @@
     _smoothKey() { return this.ctx.smoothKind === 'torque' ? 'mdSmooth' : 'smooth'; }
     _gearDefault() { return this.ctx.gearsAll ? { autoGears: false, gears: new Set() } : { autoGears: true }; }
     // STK <-> PRO: the "gear" filter becomes the sector filter (d.gear holds the gear or the sector channel, set by app.js)
+    // the Track detection sectors changed (app.js rebuilt d.corners): the sector filter starts again from all
+    sectorsChanged() { this.f.corners = new Set(); this.cache = null; this.update(); }
     slotsChanged() { Object.assign(this.f, this._gearDefault(), this.f.autoGears ? {} : { gears: new Set() }); this.cache = null; this.update(); }
 
     update() {
@@ -315,7 +317,7 @@
         time: (td => Math.abs(f.t0 - td.t0) < 1e-3 && Math.abs(f.t1 - td.t1) < 1e-3)(this._timeDefault()), corners: !f.corners.size };
       this.side.querySelectorAll('.reset-btn[data-reset]').forEach(b => { b.hidden = dflt[b.dataset.reset]; });
       this.q('.lp-corners').innerHTML = d.corners.length && !this.track ? `<button class="chip lp-chip" data-c="all" aria-pressed="${!f.corners.size}" style="--mc:${C.accent}">All</button>` +
-        d.corners.map(c => `<button class="chip lp-chip" data-c="${c.n}" aria-pressed="${f.corners.has(c.n)}" style="--mc:${C.accent}" title="Corner ${c.n} · ${c.ranges.length} pass${c.ranges.length === 1 ? '' : 'es'} in this log" aria-label="Corner ${c.n}">C${c.n}</button>`).join('') : '';
+        d.corners.map(c => `<button class="chip lp-chip" data-c="${c.n}" aria-pressed="${f.corners.has(c.n)}" style="--mc:${C.accent}" title="Sector ${c.n} · ${c.ranges.length} pass${c.ranges.length === 1 ? '' : 'es'} in this log" aria-label="Sector ${c.n}">S${c.n}</button>`).join('') : '';
     }
 
     // Default time section: the best (fastest) full lap; the whole log when it has no full lap.
@@ -503,12 +505,12 @@
         const on = this.f.corners.has(c.n);
         const pieces = c.ref.map(([ta, tb]) => { const a = at(ta), b = Math.max(a + 1, at(tb)); return [a, b]; });
         const d = pieces.map(([a, b]) => line(P.slice(a, b + 1))).join('');
-        out.push(`<g class="lp-c${on ? ' is-on' : ''}" data-c="${c.n}"><title>Corner ${c.n}: from braking for it to braking for the next one</title>` +
+        out.push(`<g class="lp-c${on ? ' is-on' : ''}" data-c="${c.n}"><title>Sector ${c.n} (Track detection)</title>` +
           `<path d="${d}" class="lp-c-hit"/><path d="${d}" class="lp-c-line"/></g>`);
         const i = pieces[0][0], [nx, ny] = normal(i);   // 1px gap across the track where the segment starts
         cuts.push(`M${f(P[i][0] - nx * 6)} ${f(P[i][1] - ny * 6)}L${f(P[i][0] + nx * 6)} ${f(P[i][1] + ny * 6)}`);
         const ap = at(c.apex), [ax, ay] = normal(ap);
-        nums.push(`<text class="lp-c-num${on ? ' is-on' : ''}" data-c="${c.n}" x="${f(P[ap][0] + ax * 12)}" y="${f(P[ap][1] + ay * 12)}" text-anchor="middle" dominant-baseline="central">${c.n}</text>`);
+        nums.push(`<text class="lp-c-num${on ? ' is-on' : ''}" data-c="${c.n}" x="${f(P[ap][0] + ax * 12)}" y="${f(P[ap][1] + ay * 12)}" text-anchor="middle" dominant-baseline="central">S${c.n}</text>`);
       });
       out.push(`<path d="${cuts.join('')}" class="lp-cut"/>`, ...nums);
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`);

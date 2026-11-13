@@ -401,7 +401,7 @@
         item('mu', `<i class="sim-sw sim-sw-mu" style="border-color:${mc}"></i>Other μ levels`) +
         item('tgt', `<i class="sim-sw sim-sw-tgt"></i>Slip target at the logged μ`);
 
-      const what = `${slots().one.toLowerCase()} ${selG.join(', ')}, ${corner > 0 ? 'corner ' + corner : 'all corners'}`;
+      const what = `${slots().one.toLowerCase()} ${selG.join(', ')}, ${corner > 0 ? 'sector ' + corner : 'all sectors'}`;
       this.q('.sim-top').setAttribute('aria-label', `Logged slip over lean angle, ${what}, with the slip target of map ${t.id} at the logged μ`);
     }
   }

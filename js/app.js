@@ -613,6 +613,8 @@
   // Add MOTEC data first asks where the log comes from: the built-in sample (a Bol d'Or race log, anonymised copy
   // in samples/) or the user's own .ld file.
   const SAMPLE_LOG = { url: 'samples/bol-dor-sample.ld', name: "Bol d'Or sample data" };
+  // the sample's default sectors (S1..S7 from 0 / 1160 / 1782 / 3550 / 4061 / 4478 / 5074 m)
+  const SAMPLE_SECTORS = { lapLen: 5521, ends: [1160, 1782, 3550, 4061, 4478, 5074, 5521] };
   function setLogModal(open) {
     $('logModal').hidden = !open;
     if (open) $('logSample').focus(); else $('log').focus();
@@ -1270,18 +1272,50 @@
   function slotChannel(d) {
     d.sector = d.laps && d.laps.length ? sectorChannel(d) : null;
     d.gear = d.gearRaw;
+    sectorSegments(d);
+  }
+  // The circuit-map selectors (corner filter of the log panel, Simulation, Adaptive Rider Request) use the Track detection
+  // sectors: d.corners = one entry per sector, n = sector number, ranges = its passes in every lap (by lap distance),
+  // ref = its part of the fastest lap (drawn on the map), apex = the middle of it (the label). The logged corners stay
+  // in d.cornersLog (Sectors from the logged corners).
+  function sectorSegments(d) {
+    if (!d.cornersLog) d.cornersLog = d.corners || [];
+    const p = lapDistance(d), ends = used();
+    if (!p || !d.refLap || !ends.length) { d.corners = d.cornersLog; return; }
+    const segs = ends.map((e, k) => ({ n: k + 1, from: k ? ends[k - 1] : 0, to: e, ranges: [], ref: [], apex: null }));
+    d.laps.forEach(l => {
+      const i0 = Math.max(0, Math.floor(l.a * d.rate)), i1 = Math.min(d.n, Math.ceil(l.b * d.rate));
+      let cur = -1, start = 0;
+      const close = i => { if (cur >= 0 && i > start) segs[cur].ranges.push([start / d.rate, i / d.rate]); };
+      for (let i = i0; i < i1; i++) {
+        const x = p[i]; let k = -1;
+        if (x >= 0 && x < TD.lapLen) { k = 0; while (k < segs.length - 1 && x >= segs[k].to) k++; }
+        if (k !== cur) { close(i); cur = k; start = i; }
+      }
+      close(i1);
+    });
+    const ra = d.refLap.a, rb = d.refLap.b;
+    segs.forEach(s => {
+      s.ref = s.ranges.filter(([a, b]) => a >= ra - 1e-6 && b <= rb + 1e-6);
+      if (s.ref.length) { const r = s.ref.reduce((m, q) => (q[1] - q[0] > m[1] - m[0] ? q : m)); s.apex = (r[0] + r[1]) / 2; }
+    });
+    d.corners = segs.filter(s => s.ref.length);
   }
   // Sectors from the logged corners (fastest lap): sector k = corner k and the straight after it, ending where the
   // rider brakes for the next corner; the last corner's sector ends at the line. Max 15 (later corners share S15).
   // The maps follow the STK allocation: each sector gets the map its riding mode uses in the gear of that kind of corner,
   // from its slowest speed (data.js SECTOR_CLASS), so similar corners get similar maps.
-  function sectorsFromLog(d) {
-    if (!d || !d.dist || !d.refLap || !d.corners.length) return null;
+  // fixed: given sector ends (the sample's default sectors), only the maps come from the log
+  function sectorsFromLog(d, fixed) {
+    if (!d || !d.dist || !d.refLap || !(d.cornersLog || d.corners).length) return null;
     const at = t => d.dist[Math.min(d.n - 1, Math.max(0, Math.floor(t * d.rate)))];
-    const lapLen = Math.round(at(d.refLap.b) - at(d.refLap.a));
-    const brakes = d.corners.map(c => Math.round(at(c.ref[0][0]) - at(d.refLap.a))).filter(x => x > 0 && x < lapLen).sort((a, b) => a - b);
-    const n = Math.min(D.SECTORS, brakes.length);
-    const ends = brakes.slice(1, n).concat([lapLen]);
+    let lapLen = Math.round(at(d.refLap.b) - at(d.refLap.a)), ends;
+    if (fixed) { ends = fixed.ends.slice(); lapLen = fixed.lapLen; }
+    else {
+      const brakes = (d.cornersLog || d.corners).map(c => Math.round(at(c.ref[0][0]) - at(d.refLap.a))).filter(x => x > 0 && x < lapLen).sort((a, b) => a - b);
+      const n = Math.min(D.SECTORS, brakes.length);
+      ends = brakes.slice(1, n).concat([lapLen]);
+    }
     // slowest speed of each sector on the fastest lap -> corner class -> STK gear column
     const a = Math.floor(d.refLap.a * d.rate), b = Math.min(d.n, Math.floor(d.refLap.b * d.rate)), base = d.dist[a];
     const vmin = ends.map(() => Infinity);
@@ -1291,7 +1325,7 @@
       vmin[k] = Math.min(vmin[k], d.vref[i]);
     }
     const cls = vmin.map(v => D.sectorClass(Number.isFinite(v) ? v : 120));
-    return { lapLen, ends, cls, count: n };
+    return { lapLen, ends, cls, count: ends.length };
   }
   const padEnds = e => e.concat(new Array(D.SECTORS - e.length).fill(UNUSED));
   function applySectors(sec) {
@@ -1301,7 +1335,7 @@
   // A log loaded while the sectors are the untouched example (or empty): lap length, sectors and maps from it
   function autoTrack(d) {
     if (!TD.example && TD.ends.some(x => x < UNUSED)) return;
-    const sec = sectorsFromLog(d);
+    const sec = sectorsFromLog(d, state.logName === SAMPLE_LOG.name ? SAMPLE_SECTORS : null);
     if (sec) applySectors(sec);
   }
 
@@ -1467,7 +1501,7 @@
     trackChanged(); sync();
   };
   function trackChanged() {
-    if (logView.d) { slotChannel(logView.d); if (D.variant === 'pro') logView.slotsChanged(); }
+    if (logView.d) { slotChannel(logView.d); logView.sectorsChanged(); if (D.variant === 'pro') logView.slotsChanged(); }
     syncTrack();
     if (state.tab === 'sim') simView.render();
   }

@@ -98,10 +98,10 @@
   // PRO allocation: allocPro[mode][sector] = the map of each gear (#1..#6) in that sector. A new sector layout starts with
   // the sector's map (from its corner class) in every gear.
   const proAlloc = (m, cls) => { const a = cls.map(c => new Array(6).fill(allocation[m][c])); while (a.length < SECTORS) a.push(a[a.length - 1].slice()); return a; };
-  // Example (Paul Ricard, from the Bol d'Or sample log): 13 sectors, each a corner and the straight after it, ending
-  // where the rider brakes for the next one. Classes from the sample's slowest speeds (57 km/h at S13 .. 205 km/h at S3).
-  const EXAMPLE = { lapLen: 5521, ends: [679, 923, 1098, 1271, 1412, 1746, 3258, 3994, 4456, 4725, 4882, 5139, 5521],
-    cls: [2, 2, 4, 2, 1, 0, 3, 3, 2, 1, 3, 2, 0] };
+  // Example (Paul Ricard, the Bol d'Or sample log's default sectors, app.js SAMPLE_SECTORS): 7 sectors.
+  // Classes from the sample's slowest speeds (100 / 70 / 155 / 165 / 98 / 78 / 57 km/h).
+  const EXAMPLE = { lapLen: 5521, ends: [1160, 1782, 3550, 4061, 4478, 5074, 5521],
+    cls: [2, 0, 3, 3, 2, 1, 0] };
   const allocPro = {};
   VEHICLE_MODES.forEach(m => { allocPro[m] = proAlloc(m, EXAMPLE.cls); });
   // Track detection (manual 9): sector ends [m lap distance]; unused sectors far beyond the lap length.

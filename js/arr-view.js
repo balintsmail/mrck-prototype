@@ -20,7 +20,9 @@
   const MODES = ['Rain', 'Int', 'Dry1', 'Dry2'];          // idx_mode_veh 1..4
   const TPD_MIN = 0;                                       // on the throttle only, as Simulation
   const GEARS = [1, 2, 3, 4, 5, 6];
-  const COL = { lim: '#f5d846', pre: '#ff4d5e', req: '#ff9f3f', act: '#36b2e3', fx: '#ffffff', red: '#ff4d5e', lean: '#9aa0b4' };
+  // colours from the All slip target maps scale (app.js MAP_COLORS); the map white
+  const START_CURVE = 12;                                   // the Limit Setup curve the adaptation modifies by default
+  const COL = { lim: '#ffffff', pre: '#00b0b7', req: '#0042e8', act: '#a40663', fx: '#6506a4', red: '#e2cf00', lean: '#9aa0b4' };
   const RED_MIN = 2;                                       // TC reduction [Nm] counted as "reducing" (md_req − md_tgt_dtc)
   const RED_SAMPLES = 5;                                   // a map point adapts on at least 5 reducing samples (50 ms) in its lean window
   const LAPS = 20, LAP_MS = 250;                           // simulated laps; animation: 0.25 s per lap
@@ -80,10 +82,9 @@
         <div class="lp-sub"><span class="side-sub">Simulated lap</span><span class="lp-read arr-lap-read"></span></div>
         <div class="arr-lap-row">
           <button class="ico-btn arr-play" aria-label="Stop"><span class="material-icons" aria-hidden="true">stop</span><span class="arr-play-t">Stop</span></button>
-          <input type="range" class="lp-smooth-in arr-lap" min="1" max="${LAPS}" step="1" value="1" aria-label="Simulated lap">
+          <input type="range" class="lp-smooth-in arr-lap" min="0" max="${LAPS}" step="1" value="0" aria-label="Simulated lap">
         </div>
       </div>
-      <p class="arr-adapt-note">Every gear has its own map. Once per lap, each map point inside the lean angles to work moves towards the force where the TC reduced the torque in that gear on the selected lap (the best lap by default), plus the target; without reduction it moves back towards the dataset value. Above the highest lean with data, the points follow that point's value.</p>
     </div>`;
   const TEMPLATE = `
     <div class="sim-empty" hidden>
@@ -117,6 +118,7 @@
       PARAMS.forEach(P => RangeUI.attach(this.side.querySelector(`input[data-p="${P[0]}"]`), { unit: P[7] }));
       RangeUI.attachDual(this.side.querySelector('input[data-l="lo"]'), this.side.querySelector('input[data-l="hi"]'), { unit: '°' });
       RangeUI.attach(this.side.querySelector('.arr-lap'), {});
+      el.querySelector('.sim-body').appendChild(this.side.querySelector('.arr-lapctl'));   // the simulated lap: below the graph
       this.q = s => el.querySelector(s) || this.side.querySelector(s);
       this.top = new SimView.Plot(this.q('.arr-top'), -70);
       this.q('.sim-sample').onclick = e => opts.onSample(e.currentTarget);
@@ -137,7 +139,7 @@
       el.addEventListener('keydown', e => { const it = e.target.closest('.sim-legend-top [data-k]'); if (it && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(it); } });
       // limit adaptation: parameters, simulated lap, play / stop
       this.p = Object.assign(Object.fromEntries(PARAMS.map(p => [p[0], p[5]])), { lo: LEAN_DEF[0], hi: LEAN_DEF[1] });
-      this.lap = 1;
+      this.lap = 0;                                          // lap 0: the original (dataset) map
       this.side.addEventListener('input', e => {
         const t = e.target, k = t.dataset && t.dataset.p, l = t.dataset && t.dataset.l;
         if (k) { this.p[k] = +t.value; this.render(); }
@@ -161,13 +163,13 @@
       window.addEventListener('resize', () => { if (!el.hidden) this.render(); });
     }
 
-    // Play: one simulated lap every 0.25 s, 1 -> 20, then again from lap 1; fromStart: restart at lap 1
+    // Play: one simulated lap every 0.25 s, 0 (the original map) -> 20, then again from lap 0; fromStart: restart at lap 0
     play(fromStart) {
       if (this.timer) { if (!fromStart) return; clearInterval(this.timer); }
-      if (fromStart || this.lap >= LAPS) this.lap = 1;
+      if (fromStart || this.lap >= LAPS) this.lap = 0;
       this.timer = setInterval(() => {
         if (this.el.hidden || !this.o.getLog()) { this.stop(); return; }
-        this.lap = this.lap >= LAPS ? 1 : this.lap + 1;
+        this.lap = this.lap >= LAPS ? 0 : this.lap + 1;
         this.render();
       }, LAP_MS);
       this.render();
@@ -250,7 +252,7 @@
       };
       let preMax = -Infinity;                               // md_tgt_prectrl when it does not limit = the demand map's max. torque
       if (d.mdPre) for (let i = 0; i < n; i++) if (d.mdPre[i] > preMax) preMax = d.mdPre[i];
-      this.F = { req: conv(d.mdReq), act: conv(d.mdAct), pre: conv(d.mdPre), preMax, conv };
+      this.F = { req: conv(d.mdReq), act: conv(d.mdAct), pre: conv(d.mdPre), red: conv(d.red), preMax, conv };   // red: the DTC reduction (md_req − md_tgt_dtc) as a force
       this.fFor = d;
       return this.F;
     }
@@ -308,7 +310,12 @@
     }
 
     // Limit Setup curve number of a riding mode / gear (dem_scale_select), and its values (null: a library curve 16..30)
-    curveNo(mode, g) { const RL = this.o.riderLimit(); return RL && RL.select[mode] ? RL.select[mode][g - 1] : null; }
+    // The adaptation starts from Limit Setup curve 12 (dem_scale_select 12) in every mode and gear, if the dataset has it.
+    curveNo(mode, g) {
+      const RL = this.o.riderLimit();
+      if (RL && RL.curves.length >= START_CURVE) return START_CURVE;
+      return RL && RL.select[mode] ? RL.select[mode][g - 1] : null;
+    }
     curve(no) { const RL = this.o.riderLimit(); return RL && no >= 1 && no <= RL.curves.length ? RL.curves[no - 1] : null; }
 
     _syncPickers(d) {
@@ -383,9 +390,9 @@
       const { lo, hi } = this.p, iLo = this.side.querySelector('input[data-l="lo"]'), iHi = this.side.querySelector('input[data-l="hi"]');
       if (+iLo.value !== lo) iLo.value = lo;
       if (+iHi.value !== hi) iHi.value = hi;
-      iLo.style.zIndex = lo > 35 ? 2 : '';                    // both ends at the top: the "from" thumb stays reachable
+      iLo.style.zIndex = lo > 35 ? 3 : '';                    // both ends at the top: the "from" thumb stays reachable
       const fill = this.side.querySelector('.arr-dual-fill');
-      fill.style.setProperty('--a', (lo / 70 * 100) + '%'); fill.style.setProperty('--b', (hi / 70 * 100) + '%');
+      fill.style.setProperty('--a', lo / 70); fill.style.setProperty('--b', hi / 70);   // thumb centres: 8 px .. width − 8 px
       this.side.querySelector('[data-r="lean"]').textContent = '|lean|, both sides';
       this.side.querySelector('.reset-btn[data-reset="lean"]').hidden = lo === LEAN_DEF[0] && hi === LEAN_DEF[1];
       const lapIn = this.q('.arr-lap');
@@ -418,12 +425,12 @@
       const curves = [this.gear, ...selG.filter(g => g !== this.gear)].map(g => { const no = this.curveNo(mode, g); return { no, g, row: this.curve(no) }; });
       const cv0 = curves[0];
       const missing = !F.act ? 'This log has no md_act / i_gear / r_tire_rr: the force cannot be calculated.' : '';
-      this.q('.sim-info').textContent = missing || `${this.o.modeName(mode)} (logged) · gear ${this.gear} · every gear has its own map · ${all.length.toLocaleString()} samples`;
+      this.q(".sim-info").textContent = missing; this.q(".sim-info").hidden = !missing;   // only a missing-channel warning, no description
       const S = this._smoothed(d);
       const ad = cv0.row ? this._adapt(d, RL, cv0) : null, adRow = ad ? ad.maps[this.lap] : null;
       this._syncAdapt(ad);
       this.q('.arr-h-top').textContent = `· ${this.o.modeName(mode)} #${this.gear} · map of gear ${this.gear}` +
-        (cv0.row ? ` (from curve ${cv0.no})` + (ad.off ? ' · adaptation off' : ` · after lap ${this.lap}`) : cv0.no ? ` · curve ${cv0.no}: library curve in the ECU dataset, values not in the file` : ' · no Limit Setup in this dataset');
+        (cv0.row ? ` (from curve ${cv0.no})` + (ad.off ? ' · adaptation off' : (this.lap ? ` · after lap ${this.lap}` : " · lap 0: the original map")) : cv0.no ? ` · curve ${cv0.no}: library curve in the ECU dataset, values not in the file` : ' · no Limit Setup in this dataset');
 
       // value axis: the same for every gear (and every lap / legend toggle): up to the highest dataset curve of any gear
       // and the forces of the selection in all gears, in steps of 1000 N
@@ -441,8 +448,10 @@
       // shared drawing: the curve over −70 … +70 (mirrored, |lean|), the lean angles to work, their handles
       const curvePath = (c, gr, row) => { c.beginPath(); for (let lx = -70; lx <= 70; lx += 0.5) { const X = gr.px(lx), Yv = gr.py(limitAt(RL.lean, row, Math.abs(lx))); lx === -70 ? c.moveTo(X, Yv) : c.lineTo(X, Yv); } };
       const zone = (c, gr) => {
-        c.fillStyle = COL.lim; c.globalAlpha = 0.07;
-        [-1, 1].forEach(sg => { const a = gr.px(sg * p.lo), b = gr.px(sg * p.hi); c.fillRect(Math.min(a, b), gr.y0, Math.abs(b - a), gr.y1 - gr.y0); });
+        c.fillStyle = '#000000'; c.globalAlpha = 0.5;
+        // shaded: the lean angles the adaptation ignores (|lean| below "from" and above "to")
+        const band = (l0, l1) => { if (l1 <= l0) return; const a = gr.px(l0), b = gr.px(l1); c.fillRect(Math.min(a, b), gr.y0, Math.abs(b - a), gr.y1 - gr.y0); };
+        band(-p.lo, p.lo); band(-70, -p.hi); band(p.hi, 70);
         c.globalAlpha = 1;
       };
       const handles = (c, gr) => {
@@ -450,16 +459,18 @@
         [p.lo, p.hi].forEach(v => [-1, 1].forEach(sg => {
           if (v === 0 && sg < 0) return;
           const X = Math.round(gr.px(sg * v)) + 0.5;
-          c.strokeStyle = COL.lim; c.lineWidth = 1.5; c.beginPath(); c.moveTo(X, gr.y0); c.lineTo(X, gr.y1); c.stroke();
+          c.strokeStyle = COL.lim; c.lineWidth = 2; c.beginPath(); c.moveTo(X, gr.y0); c.lineTo(X, gr.y1); c.stroke();
           c.fillStyle = COL.lim; c.beginPath(); c.roundRect ? c.roundRect(X - 18, gr.y0 + 2, 36, 16, 4) : c.rect(X - 18, gr.y0 + 2, 36, 16); c.fill();
           c.fillStyle = '#0c0c12'; c.fillText(`${sg < 0 && v ? '−' : ''}${v}°`, X, gr.y0 + 10.5);
         }));
         c.restore();
       };
-      const dashed = (c, gr, row) => { curvePath(c, gr, row); c.strokeStyle = '#ffffff'; c.globalAlpha = 0.7; c.lineWidth = 1.5; c.setLineDash([3, 4]); c.stroke(); c.setLineDash([]); c.globalAlpha = 1; };
+      const dashed = (c, gr, row) => { curvePath(c, gr, row); c.strokeStyle = '#ffffff'; c.globalAlpha = 0.7; c.lineWidth = 2; c.setLineDash([3, 4]); c.stroke(); c.setLineDash([]); c.globalAlpha = 1; };
 
       // ---- the graph: every sample of the selection and the adapted map after this.lap laps ----
-      const h = Math.max(320, Math.round(window.innerHeight - (this.q('.arr-top').parentNode.getBoundingClientRect().top + window.scrollY) - 16));
+      // the graph fills the window down to the simulated lap control below it, which stays visible
+      const lapCtl = this.q('.arr-lapctl'), below = lapCtl ? lapCtl.offsetHeight + 12 : 0;
+      const h = Math.max(320, Math.round(window.innerHeight - (this.q('.arr-top').parentNode.getBoundingClientRect().top + window.scrollY) - 16 - below));
       const c = this.top.begin(h, Y), gr = this.top.g;
       const pts = (arr, color, size, alpha, cond) => {
         c.globalAlpha = alpha; c.fillStyle = color;
@@ -471,25 +482,40 @@
         runs.forEach(run => { c.beginPath(); run.forEach((i, k) => (k ? c.lineTo(gr.px(x(i)), gr.py(arr[i])) : c.moveTo(gr.px(x(i)), gr.py(arr[i])))); c.stroke(); });
         c.globalAlpha = 1;
       };
-      zone(c, gr);
+      if (adRow && cv0.row && !H('lim')) {                       // the change so far: between the original and the adapted map
+        c.beginPath();
+        for (let lx = -70; lx <= 70; lx += 0.5) { const X = gr.px(lx), Yv = gr.py(limitAt(RL.lean, adRow, Math.abs(lx))); lx === -70 ? c.moveTo(X, Yv) : c.lineTo(X, Yv); }
+        for (let lx = 70; lx >= -70; lx -= 0.5) c.lineTo(gr.px(lx), gr.py(limitAt(RL.lean, cv0.row, Math.abs(lx))));
+        c.closePath(); c.fillStyle = '#ffffff'; c.globalAlpha = 0.1; c.fill('evenodd'); c.globalAlpha = 1;
+      }
       if (!H('fx') && S.fx) pts(S.fx, COL.fx, 2, 0.45);
-      if (!H('act') && S.act) lines(S.act, COL.act, 1.2, 0.75);
-      if (!H('req') && S.req) lines(S.req, COL.req, 1.2, 0.75);
+      if (!H('act') && S.act) lines(S.act, COL.act, 2, 0.75);
+      if (!H('req') && S.req) lines(S.req, COL.req, 2, 0.75);
       if (!H('pre') && F.pre) pts(F.pre, COL.pre, 4, 0.9, i => d.mdPre[i] < F.preMax - 0.5);   // only where it limits
+      if (!H('red') && F.red) {                                  // DTC reduction: dots joined while the TC keeps reducing
+        const on = i => d.red[i] > RED_MIN && Number.isFinite(F.red[i]);
+        c.globalAlpha = 0.85; c.strokeStyle = COL.red; c.lineWidth = 2; c.lineJoin = 'round';
+        runs.forEach(run => { c.beginPath(); let pen = false;
+          run.forEach(i => { if (!on(i)) { pen = false; return; } const X = gr.px(x(i)), Y = gr.py(F.red[i]); pen ? c.lineTo(X, Y) : c.moveTo(X, Y); pen = true; });
+          c.stroke(); });
+        c.globalAlpha = 1;
+        pts(F.red, COL.red, 3, 0.85, on);
+      }    // DTC reduction [N], where the TC reduces
+      zone(c, gr);                                               // ignored lean angles: darkens the logged data too
       curves.slice(1).forEach(cv => {                            // other selected gears' maps (dataset curve): thin dashed
         if (!cv.row || H('lim')) return;
-        curvePath(c, gr, cv.row); c.strokeStyle = COL.lim; c.lineWidth = 1.5; c.setLineDash([6, 4]); c.stroke(); c.setLineDash([]);
+        curvePath(c, gr, cv.row); c.strokeStyle = COL.lim; c.lineWidth = 2; c.setLineDash([6, 4]); c.stroke(); c.setLineDash([]);
       });
       if (cv0.row && !H('base')) dashed(c, gr, cv0.row);
       if (ad && !ad.off && !H('steps')) {                         // the maps after the earlier laps: dotted, older ones fainter
         for (let k = 1; k < this.lap; k++) {
-          curvePath(c, gr, ad.maps[k]); c.strokeStyle = COL.lim; c.lineWidth = 1.2; c.lineJoin = 'round';
+          curvePath(c, gr, ad.maps[k]); c.strokeStyle = COL.lim; c.lineWidth = 2; c.lineJoin = 'round';
           c.globalAlpha = 0.25 + 0.5 * k / this.lap; c.setLineDash([1.5, 3]); c.stroke();
         }
         c.setLineDash([]); c.globalAlpha = 1;
       }
       if (adRow && !H('lim')) {                                  // the adapted map after this.lap laps: bold, its points
-        curvePath(c, gr, adRow); c.strokeStyle = COL.lim; c.lineWidth = 3.5; c.lineJoin = 'round'; c.stroke();
+        curvePath(c, gr, adRow); c.strokeStyle = COL.lim; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke();
         RL.lean.forEach((lx, j) => [-1, 1].forEach(sg => {
           c.beginPath(); c.arc(gr.px(sg * lx), gr.py(adRow[j]), 4, 0, Math.PI * 2); c.fillStyle = ad.on(j) ? '#ffffff' : '#0c0c12'; c.fill();
           c.lineWidth = 2; c.strokeStyle = COL.lim; c.stroke();
@@ -504,9 +530,10 @@
       if (!H('lim')) curves.forEach((cv, k) => { const row = k === 0 ? adRow : cv.row; if (row) this.top.rightLabel(k === 0 ? `#${cv.g}${ad && ad.off ? ' · off' : ` · lap ${this.lap}`}` : `#${cv.g}`, gr.py(limitAt(RL.lean, row, 70)) + k * 19, COL.lim, k === 0, 17); });
 
       setHTML(this.q('.arr-legend-f'),
-        item('lim', `<i class="sim-sw arr-sw-lim"></i>Map of gear ${this.gear} ${ad && ad.off ? '(adaptation off)' : `after lap ${this.lap} (adapted)`}`, !cv0.row) +
+        item('lim', `<i class="sim-sw arr-sw-lim"></i>Map of gear ${this.gear} ${ad && ad.off ? '(adaptation off)' : (this.lap ? `after lap ${this.lap} (adapted)` : "· lap 0, the original map")}`, !cv0.row) +
         item('steps', `<i class="sim-sw arr-sw-step"></i>After each earlier lap`, !ad || ad.off || this.lap < 2) +
         item('base', `<i class="sim-sw arr-sw-base"></i>Curve ${cv0.no ?? '–'} in the dataset`, !cv0.row) +
+        item('red', `<i class="sim-sw arr-sw-ptln" style="--c:${COL.red}"></i>DTC reduction · (md_req − md_tgt_dtc) × i / r`, !F.red) +
         item('pre', `<i class="sim-sw arr-sw-pts" style="--c:${COL.pre}"></i>Logged limit · md_tgt_prectrl × i / r, where it limits`, !F.pre) +
         item('req', `<i class="sim-sw arr-sw-ln" style="--c:${COL.req}"></i>Request · md_req × i / r`, !F.req) +
         item('act', `<i class="sim-sw arr-sw-ln" style="--c:${COL.act}"></i>Actual · md_act × i / r`, !F.act) +
