@@ -262,9 +262,9 @@
     _smoothed(d) {
       const k = Math.max(1, Math.round(this.o.filters().mdSmooth || 1)), F = this._forces(d);
       if (this.sFor === d && this.sK === k) return this.S;
-      const mdReq = smooth(d.mdReq, k), mdAct = smooth(d.mdAct, k);
-      this.S = k <= 1 ? { req: F.req, act: F.act, fx: d.fxCalc, mdReq, mdAct }
-        : { req: F.conv(mdReq), act: F.conv(mdAct), fx: smooth(d.fxCalc, k), mdReq, mdAct };
+      const mdReq = smooth(d.mdReq, k), mdAct = smooth(d.mdAct, k), mdRed = d.red ? smooth(d.red, k) : null;
+      this.S = k <= 1 ? { req: F.req, act: F.act, fx: d.fxCalc, red: F.red, mdReq, mdAct, mdRed }
+        : { req: F.conv(mdReq), act: F.conv(mdAct), fx: smooth(d.fxCalc, k), red: F.conv(mdRed), mdReq, mdAct, mdRed };   // the DTC reduction too
       this.S.k = k; this.sFor = d; this.sK = k;
       return this.S;
     }
@@ -491,18 +491,31 @@
         for (let lx = 70; lx >= -70; lx -= 0.5) c.lineTo(gr.px(lx), gr.py(limitAt(RL.lean, cv0.row, Math.abs(lx))));
         c.closePath(); c.fillStyle = '#ffffff'; c.globalAlpha = 0.1; c.fill('evenodd'); c.globalAlpha = 1;
       }
+      if (!H('req') && !H('act') && S.req && S.act) {             // between request and actual: 25 %, blue (request) → purple (actual)
+        runs.forEach(run => {
+          let top = Infinity, bot = -Infinity;
+          c.beginPath();
+          run.forEach((i, k) => { const X = gr.px(x(i)), Y = gr.py(S.req[i]); top = Math.min(top, Y); k ? c.lineTo(X, Y) : c.moveTo(X, Y); });
+          for (let k = run.length - 1; k >= 0; k--) { const i = run[k], Y = gr.py(S.act[i]); bot = Math.max(bot, Y); c.lineTo(gr.px(x(i)), Y); }
+          c.closePath();
+          if (!(bot > top)) return;
+          const gd = c.createLinearGradient(0, top, 0, bot); gd.addColorStop(0, COL.req); gd.addColorStop(1, COL.act);
+          c.fillStyle = gd; c.globalAlpha = 0.25; c.fill(); c.globalAlpha = 1;
+        });
+      }
       if (!H('fx') && S.fx) pts(S.fx, COL.fx, 2, 0.45);
       if (!H('act') && S.act) lines(S.act, COL.act, 2, 0.75);
       if (!H('req') && S.req) lines(S.req, COL.req, 2, 0.75);
       if (!H('pre') && F.pre) pts(F.pre, COL.pre, 4, 0.9, i => d.mdPre[i] < F.preMax - 0.5);   // only where it limits
-      if (!H('red') && F.red) {                                  // DTC reduction: dots joined while the TC keeps reducing
-        const on = i => d.red[i] > RED_MIN && Number.isFinite(F.red[i]);
+      if (!H('red') && S.red) {                                  // DTC reduction (smoothed as the others) while the TC reduces, 25 % fill below
+        const on = i => S.mdRed[i] > RED_MIN && Number.isFinite(S.red[i]), y0 = gr.py(0);
+        const segs = [];
+        runs.forEach(run => { let s = null; run.forEach(i => { if (!on(i)) { s = null; return; } if (!s) segs.push(s = []); s.push(i); }); });
+        c.fillStyle = COL.red; c.globalAlpha = 0.25;
+        segs.forEach(s => { c.beginPath(); c.moveTo(gr.px(x(s[0])), y0); s.forEach(i => c.lineTo(gr.px(x(i)), gr.py(S.red[i]))); c.lineTo(gr.px(x(s[s.length - 1])), y0); c.closePath(); c.fill(); });
         c.globalAlpha = 0.85; c.strokeStyle = COL.red; c.lineWidth = 2; c.lineJoin = 'round';
-        runs.forEach(run => { c.beginPath(); let pen = false;
-          run.forEach(i => { if (!on(i)) { pen = false; return; } const X = gr.px(x(i)), Y = gr.py(F.red[i]); pen ? c.lineTo(X, Y) : c.moveTo(X, Y); pen = true; });
-          c.stroke(); });
+        segs.forEach(s => { c.beginPath(); s.forEach((i, k) => (k ? c.lineTo(gr.px(x(i)), gr.py(S.red[i])) : c.moveTo(gr.px(x(i)), gr.py(S.red[i])))); c.stroke(); });
         c.globalAlpha = 1;
-        pts(F.red, COL.red, 3, 0.85, on);
       }    // DTC reduction [N], where the TC reduces
       zone(c, gr);                                               // ignored lean angles: darkens the logged data too
       curves.slice(1).forEach(cv => {                            // other selected gears' maps (dataset curve): thin dashed
@@ -546,12 +559,12 @@
         item('steps', `<i class="sim-sw arr-sw-step"></i>After each earlier lap`, !ad || ad.off || this.lap < 2) +
         item('tgt', `<i class="sim-sw arr-sw-ln" style="--c:${COL.tgt}"></i>Target`, !ad || ad.off) +
         item('base', `<i class="sim-sw arr-sw-base"></i>Original map`, !cv0.row) +
-        item('red', `<i class="sim-sw arr-sw-ptln" style="--c:${COL.red}"></i>DTC reduction · (md_req − md_tgt_dtc) × i / r`, !F.red) +
+        item('red', `<i class="sim-sw arr-sw-ln" style="--c:${COL.red}"></i>DTC reduction · (md_req − md_tgt_dtc) × i / r`, !F.red) +
         item('pre', `<i class="sim-sw arr-sw-pts" style="--c:${COL.pre}"></i>Logged limit · md_tgt_prectrl × i / r, where it limits`, !F.pre) +
         item('req', `<i class="sim-sw arr-sw-ln" style="--c:${COL.req}"></i>Request · md_req × i / r`, !F.req) +
         item('act', `<i class="sim-sw arr-sw-ln" style="--c:${COL.act}"></i>Actual · md_act × i / r`, !F.act) +
         item('fx', `<i class="sim-sw arr-sw-pts" style="--c:${COL.fx}"></i>fx_rear_calc (logged)`, !d.fxCalc) +
-        `<span class="arr-sm">${S.k > 1 ? `Request, actual and fx_rear_calc smoothed over ${S.k} samples` : 'Not smoothed'}</span>`);
+        `<span class="arr-sm">${S.k > 1 ? `Request, actual, DTC reduction and fx_rear_calc smoothed over ${S.k} samples` : 'Not smoothed'}</span>`);
       this.q('.arr-top').setAttribute('aria-label', `Rear wheel force over lean angle, gear ${selG.join(', ')}, with the adapted map of gear ${this.gear}`);
     }
   }
