@@ -826,6 +826,7 @@ body.no-scroll { overflow: hidden; }
 .user-side .shift-pick { order: -1; }                                   /* example map first */
 .user-side .shift-pick select { min-width: 0; width: 100%; }
 /* ---------- header: STK / PRO variant switch, left of the history buttons ---------- */
+.owner-link { margin-right: 10px; text-decoration: none; }   /* owner's shortcut to the usage page (track.js) */
 .variant-seg { margin-right: 14px; }
 .variant-seg button { height: 26px; padding: 0 10px; color: #c8c8cc; border-color: #4a4a50; font-size: 11px; letter-spacing: .06em; }
 .variant-seg button:hover { color: #fff; border-color: #8a8a90; }

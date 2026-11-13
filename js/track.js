@@ -14,6 +14,23 @@
   const q = new URLSearchParams(location.search);
   let ref = q.get('ref');
   if (ref) set('mrck.ref', ref.slice(0, 60)); else ref = get('mrck.ref');
+  // Owner's shortcut to the usage page: ?owner=1 switches it on in this browser, ?owner=0 off.
+  // The page itself is on the Worker behind its own key, so the link is no use to anyone else.
+  if (q.has('owner')) {
+    set('mrck.owner', q.get('owner') === '1' ? '1' : '');
+    q.delete('owner');
+    try { history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); } catch (e) { /* keep the address */ }
+  }
+  if (get('mrck.owner') === '1') addEventListener('DOMContentLoaded', () => {
+    const at = document.getElementById('variant');
+    if (!at) return;
+    const a = document.createElement('a');
+    a.className = 'icon-btn owner-link'; a.target = '_blank'; a.rel = 'noopener';
+    a.href = ENDPOINT.replace(/\/e$/, '/admin#usage');
+    a.title = 'Usage (only you see this)'; a.setAttribute('aria-label', 'Usage');
+    a.innerHTML = '<span class="material-icons" aria-hidden="true">insights</span>';
+    at.before(a);
+  });
   const sid = rnd(), started = Date.now();
   const base = {
     vid, sid, ref,
