@@ -130,7 +130,7 @@
 
     load(d, name) {
       this.d = d; this.name = name;
-      Object.assign(this.f, { show: true, t0: 0, t1: d.duration, autoMu: false, muLo: MU_MIN, muHi: MU_MAX });   // a new log starts on the full μ range
+      Object.assign(this.f, { show: true, autoMu: false, muLo: MU_MIN, muHi: MU_MAX }, this._timeDefault());   // a new log starts on its best lap and the full μ range
       this.f.corners.clear();
       this.cache = null;
       this.track = this._buildTrack(d);
@@ -303,12 +303,18 @@
       this.q('.lp-map-src').textContent = d.refLap ? `Best lap · ${d.refLap.name} · ${fmtLap(d.refLap.b - d.refLap.a)}` : '';
       // reset icons: shown when a filter is not in its default state
       const dflt = { smooth: f.smooth === SMOOTH_DEF, gears: this.ctx.gearsAll ? !f.autoGears && !f.gears.size : f.autoGears, mu: !f.autoMu && f.muLo <= MU_MIN + 1e-9 && f.muHi >= MU_MAX - 1e-9,
-        time: f.t0 <= 1e-6 && f.t1 >= d.duration - 1e-6, corners: !f.corners.size };
+        time: (td => Math.abs(f.t0 - td.t0) < 1e-3 && Math.abs(f.t1 - td.t1) < 1e-3)(this._timeDefault()), corners: !f.corners.size };
       this.side.querySelectorAll('.reset-btn[data-reset]').forEach(b => { b.hidden = dflt[b.dataset.reset]; });
       this.q('.lp-corners').innerHTML = d.corners.length && !this.track ? `<button class="chip lp-chip" data-c="all" aria-pressed="${!f.corners.size}" style="--mc:${C.accent}">All</button>` +
         d.corners.map(c => `<button class="chip lp-chip" data-c="${c.n}" aria-pressed="${f.corners.has(c.n)}" style="--mc:${C.accent}" title="Corner ${c.n} · ${c.ranges.length} pass${c.ranges.length === 1 ? '' : 'es'} in this log" aria-label="Corner ${c.n}">C${c.n}</button>`).join('') : '';
     }
 
+    // Default time section: the best (fastest) full lap; the whole log when it has no full lap.
+    _timeDefault() {
+      const d = this.d, full = d.laps.filter(l => l.full);
+      const best = full.length ? full.reduce((p, l) => (l.b - l.a < p.b - p.a ? l : p)) : null;
+      return best ? { t0: best.a, t1: best.b } : { t0: 0, t1: d.duration };
+    }
     _set(patch) { Object.assign(this.f, patch); this.update(); }
     _setRange(a, b) {
       if (a > b) [a, b] = [b, a];
@@ -349,7 +355,7 @@
         const rs = e.target.closest('.reset-btn[data-reset]');
         if (rs) {
           this._set({ smooth: { smooth: SMOOTH_DEF }, gears: this._gearDefault(), mu: { autoMu: false, muLo: MU_MIN, muHi: MU_MAX },
-            time: { t0: 0, t1: this.d.duration }, corners: { corners: new Set() } }[rs.dataset.reset]);
+            time: this._timeDefault(), corners: { corners: new Set() } }[rs.dataset.reset]);
           if (rs.dataset.reset === 'smooth') this.q('.lp-smooth-in').value = SMOOTH_DEF;
           return;
         }
