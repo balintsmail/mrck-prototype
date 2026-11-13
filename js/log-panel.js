@@ -238,7 +238,7 @@
       const xSlip = d.slipF2 || slip, av = { x: [], y: [], mu: [], i: [] }, avBins = Array.from({ length: ACC_BINS }, () => []);
       let tr = null, tg = null, rd = null, shown = 0;
       for (let i = i0; i <= i1; i++) {
-        const ok = (!inCorner || inCorner[i]) && (!gear || !f.gears.size || f.gears.has(gear[i])) && (!secs || secs.has(d.sector[i])) && mu[i] >= lo && mu[i] <= hi;
+        const ok = (!d.lapOk || d.lapOk[i]) && (!inCorner || inCorner[i]) && (!gear || !f.gears.size || f.gears.has(gear[i])) && (!secs || secs.has(d.sector[i])) && mu[i] >= lo && mu[i] <= hi;
         const x = Math.abs(lean[i]);
         if (ok && slip[i] >= 0) { if (!tr) traces.push(tr = []); tr.push([x, slip[i]]); shown++; } else tr = null;
         if (ok && tgt && tgt[i] <= TGT_MAX) { if (!tg) target.push(tg = []); tg.push([x, tgt[i]]); } else tg = null;
@@ -306,7 +306,7 @@
       const same = (a0, b0) => Math.abs(a0 - f.t0) < 1e-3 && Math.abs(b0 - f.t1) < 1e-3;
       const fastest = full.length ? full.reduce((p, l) => (l.b - l.a < p.b - p.a ? l : p)) : null;
       this.q('.lp-laps').innerHTML = [{ name: 'All', a: 0, b: d.duration }, ...d.laps].map((l, k) =>
-        `<button class="chip lp-chip" data-a="${l.a}" data-b="${l.b}" aria-pressed="${same(l.a, l.b)}" style="--mc:${C.accent}">${esc(l.name)}${l.full ? ` <small>${fmtLap(l.b - l.a)}${l === fastest ? ' ★' : ''}</small>` : ''}</button>`).join('');
+        `<button class="chip lp-chip" data-a="${l.a}" data-b="${l.b}" aria-pressed="${same(l.a, l.b)}"${l.ignored ? ` disabled title="${l.full ? 'More than 5 % slower than the best lap' : 'Out and in laps'}: not used"` : ''} style="--mc:${C.accent}">${esc(l.name)}${l.full ? ` <small>${fmtLap(l.b - l.a)}${l === fastest ? ' ★' : ''}</small>` : ''}</button>`).join('');
       // corners
       this.q('.lp-corner-row').hidden = !d.corners.length;
       this.q('.lp-map-box').hidden = !this.track;

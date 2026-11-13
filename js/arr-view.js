@@ -448,7 +448,7 @@
       // shared drawing: the curve over −70 … +70 (mirrored, |lean|), the lean angles to work, their handles
       const curvePath = (c, gr, row) => { c.beginPath(); for (let lx = -70; lx <= 70; lx += 0.5) { const X = gr.px(lx), Yv = gr.py(limitAt(RL.lean, row, Math.abs(lx))); lx === -70 ? c.moveTo(X, Yv) : c.lineTo(X, Yv); } };
       const zone = (c, gr) => {
-        c.fillStyle = '#000000'; c.globalAlpha = 0.5;
+        c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0c0c12'; c.globalAlpha = 0.5;   // the app background
         // shaded: the lean angles the adaptation ignores (|lean| below "from" and above "to")
         const band = (l0, l1) => { if (l1 <= l0) return; const a = gr.px(l0), b = gr.px(l1); c.fillRect(Math.min(a, b), gr.y0, Math.abs(b - a), gr.y1 - gr.y0); };
         band(-p.lo, p.lo); band(-70, -p.hi); band(p.hi, 70);

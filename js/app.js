@@ -603,6 +603,7 @@
     state.logName = name;
     data.gearRaw = data.gear;                       // STK filters / simulates by gear, PRO by sector (slotChannel)
     if (!data.dist) data.dist = null;
+    markLaps(data);
     autoTrack(data);
     slotChannel(data);
     logView.load(data, name);
@@ -624,6 +625,17 @@
   $('logModal').addEventListener('mousedown', e => { if (e.target === $('logModal')) setLogModal(false); });   // backdrop
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('logModal').hidden) setLogModal(false); });
   $('logBrowse').onclick = () => { setLogModal(false); $('logFile').value = ''; $('logFile').click(); };
+  // Laps the data ignores: the out and in laps, and laps more than 5 % slower than the best one (lap.ignored,
+  // d.lapOk = 0 on their samples). A log without lap marks (one "Session") keeps everything.
+  const SLOW_LAP = 1.05;
+  function markLaps(d) {
+    const full = d.laps.filter(l => l.full), best = full.length ? Math.min(...full.map(l => l.b - l.a)) : 0;
+    d.lapOk = new Uint8Array(d.n).fill(1);
+    d.laps.forEach(l => {
+      l.ignored = d.laps.length > 1 && (!l.full || (best > 0 && l.b - l.a > best * SLOW_LAP));
+      if (l.ignored) d.lapOk.fill(0, Math.max(0, Math.floor(l.a * d.rate)), Math.min(d.n, Math.ceil(l.b * d.rate)));
+    });
+  }
   // Load sample data: from the modal or the Simulation tab's empty state (b = the clicked option, shows "Loading…")
   async function loadSample(b) {
     const sub = b.querySelector('.mo-sub'), was = sub.textContent;
@@ -1284,6 +1296,7 @@
     if (!p || !d.refLap || !ends.length) { d.corners = d.cornersLog; return; }
     const segs = ends.map((e, k) => ({ n: k + 1, from: k ? ends[k - 1] : 0, to: e, ranges: [], ref: [], apex: null }));
     d.laps.forEach(l => {
+      if (l.ignored) return;                                 // out / in laps and slow laps
       const i0 = Math.max(0, Math.floor(l.a * d.rate)), i1 = Math.min(d.n, Math.ceil(l.b * d.rate));
       let cur = -1, start = 0;
       const close = i => { if (cur >= 0 && i > start) segs[cur].ranges.push([start / d.rate, i / d.rate]); };
