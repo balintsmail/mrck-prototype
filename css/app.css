@@ -902,3 +902,15 @@ body.no-scroll { overflow: hidden; }
 .arr-sw-ln { border-top: 2px solid var(--c); }
 .arr-sw-pts { height: 6px; background: radial-gradient(circle, var(--c) 1.5px, transparent 2px) 0 0 / 6px 6px repeat-x; }
 .layout.arr-mode .lp-side-body > .lp-filter:has(.lp-mu) { display: none !important; }   /* Adaptive Rider Request: no μ filter */
+.arr-sw-red { height: 8px; background: rgba(255, 77, 94, .45); border-radius: 2px; }
+.arr-sw-lean { border-top: 1.5px dashed #9aa0b4; }
+.arr-sw-zone { height: 10px; background: rgba(245, 216, 70, .18); border-radius: 2px; }
+.arr-sw-base { border-top: 1.5px dashed rgba(255, 255, 255, .7); }
+.arr-adapt { margin: 18px 0 0; }
+.arr-adapt.is-off { opacity: .4; pointer-events: none; }
+.arr-adapt .arr-adapt-h { margin: 0 0 4px; }
+.arr-ctl { margin: 0 0 12px; }
+.arr-lap-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.arr-lap-row .arr-lap { flex: 1; min-width: 0; margin: 0; }
+.arr-play { flex: none; height: 28px; }
+.arr-adapt-note { color: var(--muted); font-size: 11px; line-height: 1.45; margin: 4px 0 0; }
