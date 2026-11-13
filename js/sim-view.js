@@ -20,7 +20,8 @@
   const r1 = v => Math.round(v * 10) / 10;
   const SLIP_Y = { min: 0, max: 20, major: 1, label: 2, fmt: v => v + '%', minor: 0.2 };
 
-  // Slip target of a map (lean descending) at |lean| x and μ m: linear in lean along each μ level, then
+  // Slip target of a map (lean descending) at |lean| x and μ m: along each μ level in the map's interpolation style
+  // (straight = linear in lean, smooth = the monotone curve of the slip target graph), then
   // linear between the two μ levels around m (clamped to the lowest / highest level), as the ECU interpolates.
   function targetAt(t, muRows, x, m) {
     const L = t.lean, n = L.length;
@@ -28,7 +29,7 @@
       if (x >= L[0]) return row[0];
       if (x <= L[n - 1]) return row[n - 1];
       let j = 0; while (j < n - 2 && x < L[j + 1]) j++;
-      return row[j] + (row[j + 1] - row[j]) * (L[j] - x) / (L[j] - L[j + 1]);
+      return SlipChart.curveAt(L, row, !!t.smooth, j, x);   // straight or smooth: the map's interpolation calculation style
     };
     if (m <= muRows[0]) return rowAt(t.rows[0]);
     const k = muRows.length - 1;
@@ -312,6 +313,7 @@
         (passes != null ? ` · ${passes} pass${passes === 1 ? '' : 'es'}` : '');
       this.q('.sim-h-top').textContent = `· ${this.o.modeName(this.mode)} ${slots().pre}${this.gear} · map ${t.id} · μ ${fmtMu(muRows[mi])} selected` + (editable ? ' (drag its points)' : ' (calculated level)');
       const x = i => Math.abs(d.lean[i]), slip = this._slip(d);
+      const sk = Math.max(1, Math.round(this.o.filters().smooth || 1));   // slip smoothing [samples]
 
       // ---- top: logged slip coloured by μ, the map as on the first three tabs (selected map), the target at the logged μ ----
       const mc = this.o.colorFor(t.id);                            // the map's own colour
@@ -329,12 +331,14 @@
         all.forEach(i => { c.fillStyle = col(d.mu[i]); c.fillRect(g.px(x(i)) - 2, g.py(slip[i]) - 2, 4, 4); });
       }
       c.globalAlpha = 1;
-      const rowPath = r => { c.beginPath(); t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[r][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); }); };
+      // a μ level as drawn on the slip target graph: straight segments or the smooth curve (the map's interpolation style)
+      const curve = (tt, row) => SlipChart.curvePoints(tt.lean, row, !!tt.smooth);
+      const trace = (P, cont) => P.forEach(([lx, v], k) => (k || cont ? c.lineTo(g.px(lx), g.py(v)) : c.moveTo(g.px(lx), g.py(v))));
+      const rowPath = r => { c.beginPath(); trace(curve(t, t.rows[r])); };
       const top = t.rows.length - 1;                               // μ band: 10 % of the map colour between the lowest and highest level
       if (!H('mu')) {
         c.beginPath();
-        t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(t.rows[top][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); });
-        for (let j = t.lean.length - 1; j >= 0; j--) c.lineTo(g.px(t.lean[j]), g.py(t.rows[0][j]));
+        trace(curve(t, t.rows[top])); trace(curve(t, t.rows[0]).reverse(), true);
         c.closePath(); c.fillStyle = mc; c.globalAlpha = 0.1; c.fill(); c.globalAlpha = 1;
       }
       const rowsEd = muRows.map((m, r) => r).filter(r => !locked.includes(r));
@@ -349,14 +353,19 @@
         });
       });
       if (!H('map')) others.forEach(o => {                         // other selected gears' maps: their selected μ level, thin
-        c.beginPath(); o.t.lean.forEach((lx, j) => { const X = g.px(lx), Y = g.py(o.t.rows[mi][j]); j ? c.lineTo(X, Y) : c.moveTo(X, Y); });
+        c.beginPath(); trace(curve(o.t, o.t.rows[mi]));
         c.strokeStyle = this.o.colorFor(o.id); c.lineWidth = 1.5; c.stroke();
       });
       runs.forEach(run => {                                        // the target at the logged μ, per pass: plain 4px white
         if (run.length < 2 || H('tgt')) return;
         const tr = d.gear ? this.o.mapFor(this.mode, Math.round(d.gear[run[0]])) : t;   // each pass with its gear's map
         c.beginPath();
-        run.forEach((i, k) => { const X = g.px(x(i)), Y = g.py(targetAt(tr, muRows, x(i), d.mu[i])); k ? c.lineTo(X, Y) : c.moveTo(X, Y); });
+        // smoothed like the logged slip (Slip smoothing): centred moving average over the neighbouring samples of the pass
+        const raw = run.map(i => targetAt(tr, muRows, x(i), d.mu[i])), cum = [0];
+        raw.forEach((v, k) => cum.push(cum[k] + v));
+        const back = Math.floor((sk - 1) / 2), fwd = sk - 1 - back, last = run.length - 1;
+        run.forEach((i, k) => { const a = Math.max(0, k - back), b = Math.min(last, k + fwd);
+          const X = g.px(x(i)), Y = g.py((cum[b + 1] - cum[a]) / (b - a + 1)); k ? c.lineTo(X, Y) : c.moveTo(X, Y); });
         c.lineJoin = 'round'; c.lineCap = 'round'; c.strokeStyle = '#ffffff'; c.lineWidth = 4; c.stroke();
       });
       if (!H('map')) { rowPath(mi); c.strokeStyle = mc; c.lineWidth = 3.5; c.lineJoin = 'round'; c.lineCap = 'round'; c.stroke(); }   // the selected level, on top

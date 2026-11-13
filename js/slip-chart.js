@@ -717,5 +717,6 @@
   }
 
   SlipChart.GEAR_COLORS = C.gears;
+  SlipChart.curvePoints = curvePoints; SlipChart.curveAt = curveAt;   // the Simulation draws and evaluates the same curves
   window.SlipChart = SlipChart;
 })();
